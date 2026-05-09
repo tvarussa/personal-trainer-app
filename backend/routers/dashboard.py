@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, date
-from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento
+from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento, OcorrenciaCancelada, Recorrencia
 from routers.auth import require_personal, get_usuario_atual
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -107,9 +107,20 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
         Financeiro.mes_referencia == mes_ref,
     ).first()
 
+    cancelamentos_mes = (
+        db.query(OcorrenciaCancelada)
+        .join(Recorrencia, OcorrenciaCancelada.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno.id,
+            OcorrenciaCancelada.data.like(f"{mes_ref}%"),
+        )
+        .count()
+    )
+
     return {
         "proxima_aula": proxima_row.data_hora if proxima_row else None,
         "aulas_mes": aulas_mes_count,
         "total_mes": fin.total if fin else 0.0,
         "situacao": "pago" if (fin and fin.pago) else "pendente" if fin else "em_dia",
+        "cancelamentos_mes": cancelamentos_mes,
     }

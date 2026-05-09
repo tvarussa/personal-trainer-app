@@ -35,9 +35,16 @@ function SeletorMes({ valor, onChange }) {
   )
 }
 
+function formatDataCurta(dataStr) {
+  const [ano, mes, dia] = dataStr.split('-')
+  return new Date(Number(ano), Number(mes) - 1, Number(dia))
+    .toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+}
+
 export default function AlunoExtrato() {
   const [mes, setMes] = useState(mesAtual)
   const [historico, setHistorico] = useState([])
+  const [cancelamentos, setCancelamentos] = useState([])
   const [carregando, setCarregando] = useState(false)
 
   const carregar = useCallback(async () => {
@@ -51,6 +58,12 @@ export default function AlunoExtrato() {
   }, [])
 
   useEffect(() => { carregar() }, [carregar])
+
+  useEffect(() => {
+    api.get(`/recorrencias/cancelamentos?mes=${mes}`)
+      .then(r => setCancelamentos(r.data))
+      .catch(() => setCancelamentos([]))
+  }, [mes])
 
   const registroMes = historico.find((r) => r.mes_referencia === mes)
 
@@ -98,6 +111,26 @@ export default function AlunoExtrato() {
       ) : (
         <div className="text-center text-gray-400 text-sm py-8 bg-white rounded-2xl border border-gray-100">
           Sem registro para {formatMes(mes)}
+        </div>
+      )}
+
+      {/* Cancelamentos do mês */}
+      {cancelamentos.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 mb-2">
+            Aulas canceladas em {formatMes(mes)} ({cancelamentos.length})
+          </h2>
+          <div className="flex flex-col gap-2">
+            {cancelamentos.map(c => (
+              <div key={c.id} className="bg-white rounded-xl border border-red-100 p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-red-700">{formatDataCurta(c.data)} às {c.horario}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{c.dia_semana_nome} — aula recorrente cancelada</p>
+                </div>
+                <span className="text-xs bg-red-50 text-red-500 border border-red-100 px-2 py-0.5 rounded-full">Cancelada</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

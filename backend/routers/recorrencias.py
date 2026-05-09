@@ -68,6 +68,38 @@ def criar_recorrencia(dados: CriarRecorrencia, db: Session = Depends(get_db), _=
     return {"id": r.id, "dia_semana_nome": DIAS_SEMANA[r.dia_semana], "horario": r.horario}
 
 
+@router.get("/cancelamentos")
+def listar_cancelamentos(
+    mes: str | None = None,
+    db: Session = Depends(get_db),
+    usuario=Depends(get_usuario_atual),
+):
+    aluno = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
+    if not aluno:
+        return []
+
+    query = (
+        db.query(OcorrenciaCancelada)
+        .join(Recorrencia, OcorrenciaCancelada.recorrencia_id == Recorrencia.id)
+        .filter(Recorrencia.aluno_id == aluno.id)
+        .order_by(OcorrenciaCancelada.data.desc())
+    )
+    if mes:
+        query = query.filter(OcorrenciaCancelada.data.like(f"{mes}%"))
+
+    return [
+        {
+            "id": c.id,
+            "recorrencia_id": c.recorrencia_id,
+            "data": c.data,
+            "horario": c.recorrencia.horario,
+            "dia_semana_nome": DIAS_SEMANA[c.recorrencia.dia_semana],
+            "cancelado_em": c.cancelado_em,
+        }
+        for c in query.all()
+    ]
+
+
 @router.post("/{recorrencia_id}/cancelar-ocorrencia")
 def cancelar_ocorrencia(
     recorrencia_id: int,

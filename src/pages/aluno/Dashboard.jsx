@@ -51,7 +51,11 @@ export default function AlunoDashboard() {
           <p className="text-xs text-purple-600 font-medium">Total do mês</p>
           <p className="text-lg font-bold text-purple-800 mt-1">{dados ? fmt(dados.total_mes) : '—'}</p>
         </div>
-        <div className="bg-orange-50 rounded-xl p-4 col-span-2">
+        <div className="bg-red-50 rounded-xl p-4">
+          <p className="text-xs text-red-500 font-medium">Cancelamentos no mês</p>
+          <p className="text-2xl font-bold text-red-700 mt-1">{dados?.cancelamentos_mes ?? '—'}</p>
+        </div>
+        <div className="bg-orange-50 rounded-xl p-4">
           <p className="text-xs text-orange-600 font-medium">Situação</p>
           <p className={`text-base font-bold mt-1 ${sit.cls}`}>{sit.label}</p>
         </div>
