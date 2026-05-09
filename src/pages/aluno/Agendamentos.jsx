@@ -54,6 +54,7 @@ export default function AlunoAgendamentos() {
   const [carregando, setCarregando] = useState(false)
   const [agendando, setAgendando] = useState(null)
   const [cancelando, setCancelando] = useState(null)
+  const [cancelandoRec, setCancelandoRec] = useState(null)
   const [aviso, setAviso] = useState(null)
 
   const carregar = useCallback(async () => {
@@ -162,7 +163,7 @@ export default function AlunoAgendamentos() {
 
   const proximasVirtuais = slots
     .filter(s => s.minha_recorrencia && new Date(s.data_hora) > agora)
-    .map(s => ({ id: s.id, data_hora: s.data_hora, _virtual: true }))
+    .map(s => ({ id: s.id, data_hora: s.data_hora, _virtual: true, recorrencia_id: s.recorrencia_id }))
 
   const proximasAulas = [...proximasReais, ...proximasVirtuais]
     .sort((a, b) => new Date(a.data_hora) - new Date(b.data_hora))
@@ -197,6 +198,24 @@ export default function AlunoAgendamentos() {
     }
   }
 
+  async function cancelarOcorrencia(recorrenciaId, dataHora) {
+    const horas = horasAte(dataHora)
+    if (horas < ANTECEDENCIA_HORAS) {
+      if (!window.confirm('Cancelamento com menos de 24h. A aula será cobrada mesmo assim. Deseja cancelar?')) return
+    }
+    const d = new Date(dataHora)
+    const data = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
+    setCancelandoRec(recorrenciaId + data)
+    try {
+      await api.post(`/recorrencias/${recorrenciaId}/cancelar-ocorrencia`, { data })
+      await carregar()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao cancelar')
+    } finally {
+      setCancelandoRec(null)
+    }
+  }
+
   const nenhumDoDia = !diaTodoBloqueado && slotsDisponiveisDoDia.length === 0 && minhasRecDoDia.length === 0 && agDoDia.length === 0
 
   return (
@@ -221,6 +240,8 @@ export default function AlunoAgendamentos() {
           <div className="flex flex-col gap-2">
             {proximasAulas.map(a => {
               const horas = horasAte(a.data_hora)
+              const d = new Date(a.data_hora)
+              const cancelKey = a._virtual ? `${a.recorrencia_id}${dataStr(d.getFullYear(), d.getMonth(), d.getDate())}` : null
               return (
                 <div key={a.id} className="bg-blue-50 rounded-xl border border-blue-100 p-3 flex items-center justify-between">
                   <div>
@@ -240,6 +261,15 @@ export default function AlunoAgendamentos() {
                       className="text-xs px-3 py-1.5 bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50"
                     >
                       {cancelando === a.id ? '...' : 'Cancelar'}
+                    </button>
+                  )}
+                  {a._virtual && horas > 0 && (
+                    <button
+                      onClick={() => cancelarOcorrencia(a.recorrencia_id, a.data_hora)}
+                      disabled={cancelandoRec === cancelKey}
+                      className="text-xs px-3 py-1.5 bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {cancelandoRec === cancelKey ? '...' : 'Cancelar'}
                     </button>
                   )}
                 </div>
@@ -285,14 +315,28 @@ export default function AlunoAgendamentos() {
           ) : (
             <>
               {/* Minhas recorrências do dia */}
-              {minhasRecDoDia.map(s => (
-                <div key={s.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl p-3">
-                  <div>
-                    <p className="font-semibold text-blue-800 text-sm">{formatHora(s.data_hora)}</p>
-                    <p className="text-xs text-blue-500 mt-0.5">Aula recorrente confirmada</p>
+              {minhasRecDoDia.map(s => {
+                const horas = horasAte(s.data_hora)
+                const d = new Date(s.data_hora)
+                const cancelKey = `${s.recorrencia_id}${dataStr(d.getFullYear(), d.getMonth(), d.getDate())}`
+                return (
+                  <div key={s.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl p-3">
+                    <div>
+                      <p className="font-semibold text-blue-800 text-sm">{formatHora(s.data_hora)}</p>
+                      <p className="text-xs text-blue-500 mt-0.5">Aula recorrente confirmada</p>
+                    </div>
+                    {horas > 0 && (
+                      <button
+                        onClick={() => cancelarOcorrencia(s.recorrencia_id, s.data_hora)}
+                        disabled={cancelandoRec === cancelKey}
+                        className="text-xs px-3 py-1.5 bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {cancelandoRec === cancelKey ? '...' : 'Cancelar'}
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {/* Slots disponíveis para agendar */}
               {slotsDisponiveisDoDia.map(s => (

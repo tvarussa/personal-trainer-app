@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from database import get_db, Recorrencia, Aluno, FrequenciaRecorrencia
-from routers.auth import require_personal
+from datetime import datetime
+from database import get_db, Recorrencia, Aluno, FrequenciaRecorrencia, OcorrenciaCancelada
+from routers.auth import require_personal, get_usuario_atual
 
 router = APIRouter(prefix="/recorrencias", tags=["recorrencias"])
 
 DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+
+
+class CancelarOcorrencia(BaseModel):
+    data: str  # "YYYY-MM-DD"
 
 
 class CriarRecorrencia(BaseModel):
@@ -61,6 +66,42 @@ def criar_recorrencia(dados: CriarRecorrencia, db: Session = Depends(get_db), _=
     db.commit()
     db.refresh(r)
     return {"id": r.id, "dia_semana_nome": DIAS_SEMANA[r.dia_semana], "horario": r.horario}
+
+
+@router.post("/{recorrencia_id}/cancelar-ocorrencia")
+def cancelar_ocorrencia(
+    recorrencia_id: int,
+    dados: CancelarOcorrencia,
+    db: Session = Depends(get_db),
+    usuario=Depends(get_usuario_atual),
+):
+    rec = db.query(Recorrencia).filter(Recorrencia.id == recorrencia_id, Recorrencia.ativo == True).first()  # noqa: E712
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recorrência não encontrada")
+
+    if usuario.perfil == "aluno":
+        al = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
+        if not al or rec.aluno_id != al.id:
+            raise HTTPException(status_code=403, detail="Sem permissão")
+
+    try:
+        hora, minuto = map(int, rec.horario.split(":"))
+        dt_ocorrencia = datetime.strptime(dados.data, "%Y-%m-%d").replace(hour=hora, minute=minuto)
+        if dt_ocorrencia < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Não é possível cancelar uma aula já passada")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida")
+
+    existente = db.query(OcorrenciaCancelada).filter(
+        OcorrenciaCancelada.recorrencia_id == recorrencia_id,
+        OcorrenciaCancelada.data == dados.data,
+    ).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Esta ocorrência já foi cancelada")
+
+    db.add(OcorrenciaCancelada(recorrencia_id=recorrencia_id, data=dados.data))
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{recorrencia_id}")

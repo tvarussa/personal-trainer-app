@@ -160,5 +160,14 @@ class Bloqueio(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class OcorrenciaCancelada(Base):
+    __tablename__ = "ocorrencias_canceladas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recorrencia_id = Column(Integer, ForeignKey("recorrencias.id"), nullable=False)
+    data = Column(String, nullable=False)  # "YYYY-MM-DD"
+    cancelado_em = Column(DateTime, default=datetime.utcnow)
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)

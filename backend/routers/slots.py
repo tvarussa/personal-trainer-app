@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-from database import get_db, SlotDisponivel, Recorrencia, FrequenciaRecorrencia, StatusAgendamento, Aluno
+from database import get_db, SlotDisponivel, Recorrencia, FrequenciaRecorrencia, StatusAgendamento, Aluno, OcorrenciaCancelada
 from routers.auth import require_personal, get_usuario_atual
 from routers.bloqueios import horario_bloqueado
 
@@ -58,7 +58,11 @@ def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atua
         })
         dt_reais.add(s.data_hora.replace(second=0, microsecond=0))
 
-    recorrencias = db.query(Recorrencia).filter(Recorrencia.ativo == True).all()
+    recorrencias = db.query(Recorrencia).filter(Recorrencia.ativo == True).all()  # noqa: E712
+
+    cancelamentos: dict[int, set[str]] = {}
+    for oc in db.query(OcorrenciaCancelada).all():
+        cancelamentos.setdefault(oc.recorrencia_id, set()).add(oc.data)
 
     for r in recorrencias:
         try:
@@ -75,8 +79,10 @@ def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atua
         if dt <= agora:
             dt += intervalo
 
+        canceladas = cancelamentos.get(r.id, set())
         for _ in range(n):
-            if dt not in dt_reais:
+            data_str_rec = dt.strftime("%Y-%m-%d")
+            if dt not in dt_reais and data_str_rec not in canceladas:
                 resultado.append({
                     "id": f"rec-{r.id}-{dt.strftime('%Y%m%d%H%M')}",
                     "data_hora": dt,
@@ -85,6 +91,7 @@ def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atua
                     "nome_aluno": nome_aluno,
                     "recorrencia": True,
                     "minha_recorrencia": minha,
+                    "recorrencia_id": r.id,
                 })
             dt += intervalo
 
