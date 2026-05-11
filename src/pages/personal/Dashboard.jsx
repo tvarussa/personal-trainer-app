@@ -27,10 +27,17 @@ function ListaAulas({ aulas, onToggleCobrar, toggling }) {
           <div key={i} className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-sm font-semibold text-gray-800 w-12 shrink-0">{fmtHora(a.data_hora)}</span>
-              <span className="text-sm text-gray-700 truncate">{a.aluno}</span>
-              {a.recorrente && (
-                <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full shrink-0">Rec</span>
-              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-700 truncate">{a.aluno}</span>
+                  {a.recorrente && (
+                    <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full shrink-0">Rec</span>
+                  )}
+                </div>
+                {a.academia && (
+                  <p className="text-xs text-blue-500 truncate">{a.academia}</p>
+                )}
+              </div>
             </div>
             {onToggleCobrar && (
               <button

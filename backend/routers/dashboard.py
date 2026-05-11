@@ -32,6 +32,7 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
         aulas.append({
             "data_hora": slot.data_hora,
             "aluno": ag.aluno.usuario.nome if ag.aluno and ag.aluno.usuario else "—",
+            "academia": ag.aluno.academia.nome if ag.aluno and ag.aluno.academia else None,
             "recorrente": False,
             "agendamento_id": ag.id,
             "recorrencia_id": None,
@@ -55,6 +56,7 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
         aulas.append({
             "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
             "aluno": r.aluno.usuario.nome if r.aluno and r.aluno.usuario else "—",
+            "academia": r.aluno.academia.nome if r.aluno and r.aluno.academia else None,
             "recorrente": True,
             "agendamento_id": None,
             "recorrencia_id": r.id,
