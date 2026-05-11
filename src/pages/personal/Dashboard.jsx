@@ -37,12 +37,12 @@ function ListaAulas({ aulas, onToggleCobrar, toggling }) {
                 onClick={() => onToggleCobrar(a, key)}
                 disabled={toggling === key}
                 className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
-                  a.cobrar
+                  a.cobrar !== false
                     ? 'border-green-200 text-green-700 bg-green-50'
-                    : 'border-gray-200 text-gray-400 bg-gray-50 line-through'
+                    : 'border-red-200 text-red-600 bg-red-50'
                 }`}
               >
-                {a.cobrar ? 'Cobrar' : 'Grátis'}
+                {a.cobrar !== false ? 'Cobrada' : 'Não cobrada'}
               </button>
             )}
           </div>
