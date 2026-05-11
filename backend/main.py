@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from database import criar_tabelas, engine
+from database import criar_tabelas
 from routers import auth, usuarios, alunos, agendamentos, slots, financeiro, notificacoes, recorrencias, configuracoes, backup, bloqueios, dashboard
 from services.scheduler import iniciar_scheduler, parar_scheduler
 
@@ -10,21 +10,10 @@ from services.scheduler import iniciar_scheduler, parar_scheduler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     criar_tabelas()
-    _migrar_db()
     _criar_personal_padrao()
     iniciar_scheduler()
     yield
     parar_scheduler()
-
-
-def _migrar_db():
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(bloqueios)"))}
-        for col, tipo in [("hora_inicio", "VARCHAR"), ("hora_fim", "VARCHAR")]:
-            if col not in cols:
-                conn.execute(text(f"ALTER TABLE bloqueios ADD COLUMN {col} {tipo}"))
-        conn.commit()
 
 
 app = FastAPI(title="Personal Trainer API", version="1.0.0", lifespan=lifespan)
