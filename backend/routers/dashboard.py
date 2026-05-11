@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, date, timedelta
+from calendar import monthrange
 from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento, TipoAgendamento, OcorrenciaCancelada, OcorrenciaGratuita, Recorrencia
 from routers.auth import require_personal, get_usuario_atual
 
@@ -72,6 +73,8 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
     hoje = date.today()
     mes_ref = hoje.strftime("%Y-%m")
     agora = datetime.utcnow()
+    mes_inicio = datetime(hoje.year, hoje.month, 1)
+    mes_fim = datetime(hoje.year, hoje.month, monthrange(hoje.year, hoje.month)[1], 23, 59, 59)
 
     lista_hoje = _aulas_do_dia(hoje, db)
     aulas_hoje = len(lista_hoje)
@@ -86,9 +89,47 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
 
     alunos_ativos = db.query(Aluno).join(Aluno.usuario).filter(Usuario.ativo == True).count()
 
+    # Receita realizada: aulas com status=realizado no mês, excluindo nao_cobrar
+    realizados = (
+        db.query(Agendamento, SlotDisponivel)
+        .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
+        .filter(
+            Agendamento.status == StatusAgendamento.realizado,
+            SlotDisponivel.data_hora >= mes_inicio,
+            SlotDisponivel.data_hora <= mes_fim,
+        )
+        .all()
+    )
+    receita_realizada = round(sum(
+        ag.aluno.preco_por_aula
+        for ag, _ in realizados
+        if ag.aluno and not getattr(ag, "nao_cobrar", False)
+    ), 2)
+
+    # Receita projetada: aulas confirmadas+realizadas no mês + taxa_mensal por aluno com ≥1 aula
+    agendados_mes = (
+        db.query(Agendamento, SlotDisponivel)
+        .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
+        .filter(
+            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
+            SlotDisponivel.data_hora >= mes_inicio,
+            SlotDisponivel.data_hora <= mes_fim,
+        )
+        .all()
+    )
+    alunos_proj: dict[int, Aluno] = {}
+    receita_aulas_proj = 0.0
+    for ag, _ in agendados_mes:
+        if ag.aluno and not getattr(ag, "nao_cobrar", False):
+            receita_aulas_proj += ag.aluno.preco_por_aula
+            alunos_proj[ag.aluno_id] = ag.aluno
+    receita_projetada = round(
+        receita_aulas_proj + sum(a.taxa_mensal for a in alunos_proj.values()), 2
+    )
+
+    # Pendente pagamento: registros financeiros do mês não pagos
     financeiros_mes = db.query(Financeiro).filter(Financeiro.mes_referencia == mes_ref).all()
-    receita_mes = sum(f.total for f in financeiros_mes if f.pago)
-    pendente = sum(f.total for f in financeiros_mes if not f.pago)
+    pendente_pagamento = round(sum(f.total for f in financeiros_mes if not f.pago), 2)
 
     proximas_rows = (
         db.query(Agendamento, SlotDisponivel)
@@ -116,8 +157,9 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
     return {
         "aulas_hoje": aulas_hoje,
         "alunos_ativos": alunos_ativos,
-        "receita_mes": receita_mes,
-        "pendente_cobrar": pendente,
+        "receita_realizada": receita_realizada,
+        "receita_projetada": receita_projetada,
+        "pendente_pagamento": pendente_pagamento,
         "proximas_aulas": proximas_aulas,
         "lista_hoje": lista_hoje,
         "proximo_dia": proximo_dia,

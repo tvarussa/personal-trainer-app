@@ -104,12 +104,16 @@ export default function PersonalDashboard() {
           <p className="text-2xl font-bold text-green-800 mt-1">{dados?.alunos_ativos ?? '—'}</p>
         </div>
         <div className="bg-purple-50 rounded-xl p-4">
-          <p className="text-xs text-purple-600 font-medium">Receita do mês</p>
-          <p className="text-lg font-bold text-purple-800 mt-1">{dados ? fmt(dados.receita_mes) : '—'}</p>
+          <p className="text-xs text-purple-600 font-medium">Receita realizada</p>
+          <p className="text-lg font-bold text-purple-800 mt-1">{dados ? fmt(dados.receita_realizada) : '—'}</p>
         </div>
-        <div className="bg-orange-50 rounded-xl p-4">
-          <p className="text-xs text-orange-600 font-medium">Pendente cobrar</p>
-          <p className="text-lg font-bold text-orange-800 mt-1">{dados ? fmt(dados.pendente_cobrar) : '—'}</p>
+        <div className="bg-teal-50 rounded-xl p-4">
+          <p className="text-xs text-teal-600 font-medium">Receita projetada</p>
+          <p className="text-lg font-bold text-teal-800 mt-1">{dados ? fmt(dados.receita_projetada) : '—'}</p>
+        </div>
+        <div className="col-span-2 bg-orange-50 rounded-xl p-4">
+          <p className="text-xs text-orange-600 font-medium">Pendente pagamento</p>
+          <p className="text-lg font-bold text-orange-800 mt-1">{dados ? fmt(dados.pendente_pagamento) : '—'}</p>
         </div>
       </div>
 
