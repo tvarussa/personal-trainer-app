@@ -116,6 +116,7 @@ class Agendamento(Base):
     status = Column(Enum(StatusAgendamento), default=StatusAgendamento.confirmado)
     cancelado_com_antecedencia = Column(Boolean, default=False)
     cobrado = Column(Boolean, default=False)
+    nao_cobrar = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     aluno = relationship("Aluno", back_populates="agendamentos")
@@ -192,6 +193,16 @@ class OcorrenciaCancelada(Base):
     recorrencia_id = Column(Integer, ForeignKey("recorrencias.id"), nullable=False)
     data = Column(String, nullable=False)  # "YYYY-MM-DD"
     cancelado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class OcorrenciaGratuita(Base):
+    """Marca uma ocorrência de aula recorrente como não cobrada."""
+    __tablename__ = "ocorrencias_gratuitas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recorrencia_id = Column(Integer, ForeignKey("recorrencias.id"), nullable=False)
+    data = Column(String, nullable=False)  # "YYYY-MM-DD"
+    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
 def criar_tabelas():

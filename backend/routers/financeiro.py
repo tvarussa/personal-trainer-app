@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import extract
+from pydantic import BaseModel
 from datetime import datetime, date
 from calendar import monthrange
 from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, Usuario, StatusAgendamento
@@ -96,10 +96,11 @@ def fechar_mes(mes: str, db: Session = Depends(get_db), _=Depends(require_person
         if not aluno:
             continue
 
-        # Apenas aulas não canceladas com cobrança
+        # Apenas aulas não canceladas e não marcadas como gratuitas pelo personal
         aulas_cobradas = [
             a for a in aulas
             if not (a.status == StatusAgendamento.cancelado and a.cancelado_com_antecedencia)
+            and not a.nao_cobrar
         ]
 
         qtd = len(aulas_cobradas)
@@ -228,6 +229,120 @@ def extrato_aluno(mes: str | None = None, db: Session = Depends(get_db), usuario
         }
         for r in registros
     ]
+
+
+@router.get("/mes-aberto")
+def mes_aberto(mes: str, db: Session = Depends(get_db), _=Depends(require_personal)):
+    """Lista todos os alunos ativos com atividade no mês, mesmo antes do fechamento."""
+    try:
+        inicio, fim = _mes_para_datas(mes)
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="Formato inválido. Use YYYY-MM")
+
+    inicio_dt = datetime(inicio.year, inicio.month, inicio.day)
+    fim_dt = datetime(fim.year, fim.month, fim.day, 23, 59, 59)
+    ano, mes_num = inicio.year, inicio.month
+    dias_no_mes = monthrange(ano, mes_num)[1]
+
+    alunos = db.query(Aluno).join(Aluno.usuario).filter(Usuario.ativo == True).all()  # noqa: E712
+
+    ags_mes = [
+        a for a in db.query(Agendamento).join(Agendamento.slot).filter(
+            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
+        ).all()
+        if inicio_dt <= a.slot.data_hora <= fim_dt
+    ]
+    por_aluno_ags: dict[int, int] = {}
+    for a in ags_mes:
+        por_aluno_ags[a.aluno_id] = por_aluno_ags.get(a.aluno_id, 0) + 1
+
+    por_aluno_rec: dict[int, int] = {}
+    for r in db.query(Recorrencia).filter(Recorrencia.ativo == True).all():  # noqa: E712
+        if r.frequencia == "mensal":
+            count = 1
+        else:
+            count = sum(1 for d in range(1, dias_no_mes + 1) if date(ano, mes_num, d).weekday() == r.dia_semana)
+        por_aluno_rec[r.aluno_id] = por_aluno_rec.get(r.aluno_id, 0) + count
+
+    fins: dict[int, Financeiro] = {
+        f.aluno_id: f
+        for f in db.query(Financeiro).filter(Financeiro.mes_referencia == mes).all()
+    }
+
+    resultado = []
+    for aluno in alunos:
+        qtd_ags = por_aluno_ags.get(aluno.id, 0)
+        qtd_rec = por_aluno_rec.get(aluno.id, 0)
+        if qtd_ags == 0 and qtd_rec == 0 and aluno.taxa_mensal == 0:
+            continue
+        valor_estimado = round(max(qtd_ags, qtd_rec) * aluno.preco_por_aula + aluno.taxa_mensal, 2)
+        fin = fins.get(aluno.id)
+        resultado.append({
+            "aluno_id": aluno.id,
+            "nome_aluno": aluno.usuario.nome,
+            "aulas_agendadas": qtd_ags,
+            "aulas_recorrentes": qtd_rec,
+            "taxa_mensal": aluno.taxa_mensal,
+            "valor_estimado": valor_estimado,
+            "financeiro_id": fin.id if fin else None,
+            "pago": fin.pago if fin else False,
+        })
+
+    return sorted(resultado, key=lambda x: x["nome_aluno"])
+
+
+class MarcarPagamentoAluno(BaseModel):
+    aluno_id: int
+    mes_referencia: str
+    pago: bool
+
+
+@router.post("/marcar-pagamento-aluno")
+def marcar_pagamento_aluno(dados: MarcarPagamentoAluno, db: Session = Depends(get_db), _=Depends(require_personal)):
+    aluno = db.query(Aluno).filter(Aluno.id == dados.aluno_id).first()
+    if not aluno:
+        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+
+    fin = db.query(Financeiro).filter(
+        Financeiro.aluno_id == dados.aluno_id,
+        Financeiro.mes_referencia == dados.mes_referencia,
+    ).first()
+
+    if fin:
+        fin.pago = dados.pago
+    else:
+        try:
+            inicio, fim = _mes_para_datas(dados.mes_referencia)
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Formato de mês inválido")
+        inicio_dt = datetime(inicio.year, inicio.month, inicio.day)
+        fim_dt = datetime(fim.year, fim.month, fim.day, 23, 59, 59)
+
+        ags = [
+            a for a in db.query(Agendamento).join(Agendamento.slot).filter(
+                Agendamento.aluno_id == dados.aluno_id,
+                Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
+            ).all()
+            if inicio_dt <= a.slot.data_hora <= fim_dt
+        ]
+        qtd = len(ags)
+        valor_aulas = round(qtd * aluno.preco_por_aula, 2)
+        total = round(valor_aulas + aluno.taxa_mensal, 2)
+
+        fin = Financeiro(
+            aluno_id=dados.aluno_id,
+            mes_referencia=dados.mes_referencia,
+            quantidade_aulas=qtd,
+            valor_aulas=valor_aulas,
+            taxa_mensal=aluno.taxa_mensal,
+            total=total,
+            pago=dados.pago,
+        )
+        db.add(fin)
+
+    db.commit()
+    db.refresh(fin)
+    return {"ok": True, "financeiro_id": fin.id}
 
 
 @router.patch("/{financeiro_id}/pago")

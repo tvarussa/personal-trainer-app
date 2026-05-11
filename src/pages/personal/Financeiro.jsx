@@ -43,21 +43,60 @@ function SeletorMes({ valor, onChange }) {
   )
 }
 
+function CardAluno({ nome, aulas, aulasLabel, taxaMensal, valorTotal, pago, onToggle, toggling }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <p className="font-semibold text-gray-800">{nome}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {aulasLabel}
+            {taxaMensal > 0 && ` · taxa mensal`}
+          </p>
+        </div>
+        <Badge pago={pago} />
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-600 space-y-0.5">
+          {aulas > 0 && <p>Aulas: {moeda(aulas)}</p>}
+          {taxaMensal > 0 && <p>Taxa: {moeda(taxaMensal)}</p>}
+          <p className="font-semibold text-gray-800">Total: {moeda(valorTotal)}</p>
+        </div>
+        <button
+          onClick={onToggle}
+          disabled={toggling}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+            pago
+              ? 'border-orange-200 text-orange-600 hover:bg-orange-50'
+              : 'border-green-200 text-green-600 hover:bg-green-50'
+          }`}
+        >
+          {pago ? 'Desfazer' : 'Marcar pago'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AbaFinanceiro({ mes }) {
   const [resumo, setResumo] = useState(null)
   const [registros, setRegistros] = useState([])
+  const [mesAberto, setMesAberto] = useState([])
   const [carregando, setCarregando] = useState(false)
   const [fechando, setFechando] = useState(false)
+  const [toggling, setToggling] = useState(null)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
     try {
-      const [{ data: r }, { data: regs }] = await Promise.all([
+      const [{ data: r }, { data: regs }, { data: aberto }] = await Promise.all([
         api.get(`/financeiro/resumo?mes=${mes}`),
         api.get(`/financeiro/?mes=${mes}`),
+        api.get(`/financeiro/mes-aberto?mes=${mes}`),
       ])
       setResumo(r)
       setRegistros(regs)
+      setMesAberto(aberto)
     } finally {
       setCarregando(false)
     }
@@ -79,17 +118,39 @@ function AbaFinanceiro({ mes }) {
     }
   }
 
-  async function togglePago(id, pagoAtual) {
-    await api.patch(`/financeiro/${id}/pago?pago=${!pagoAtual}`)
-    carregar()
+  async function togglePagoFechado(id, pagoAtual) {
+    setToggling(id)
+    try {
+      await api.patch(`/financeiro/${id}/pago?pago=${!pagoAtual}`)
+      carregar()
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  async function togglePagoAberto(item) {
+    const key = `aberto-${item.aluno_id}`
+    setToggling(key)
+    try {
+      await api.post('/financeiro/marcar-pagamento-aluno', {
+        aluno_id: item.aluno_id,
+        mes_referencia: mes,
+        pago: !item.pago,
+      })
+      carregar()
+    } finally {
+      setToggling(null)
+    }
   }
 
   if (carregando) return <div className="text-center text-gray-400 text-sm py-8">Carregando...</div>
 
+  const fechado = registros.length > 0
+
   return (
     <div className="flex flex-col gap-4">
       {/* Resumo */}
-      {resumo && (
+      {resumo && resumo.total_geral > 0 && (
         <div className="grid grid-cols-3 gap-2">
           <div className="bg-blue-50 rounded-xl p-3 text-center">
             <p className="text-xs text-blue-500 font-medium">Total</p>
@@ -115,44 +176,48 @@ function AbaFinanceiro({ mes }) {
         {fechando ? 'Calculando...' : `Fechar ${formatMes(mes)}`}
       </button>
 
-      {/* Lista por aluno */}
-      {registros.length === 0 ? (
-        <div className="text-center text-gray-400 text-sm py-6 bg-white rounded-xl border border-gray-100">
-          Nenhum registro para este mês. Clique em "Fechar mês" para calcular.
-        </div>
-      ) : (
+      {/* Mês fechado: registros oficiais */}
+      {fechado ? (
         <div className="flex flex-col gap-2">
           {registros.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="font-semibold text-gray-800">{r.nome_aluno}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {r.quantidade_aulas} aula{r.quantidade_aulas !== 1 ? 's' : ''}
-                    {r.taxa_mensal > 0 && ` · taxa mensal`}
-                  </p>
-                </div>
-                <Badge pago={r.pago} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600 space-y-0.5">
-                  {r.valor_aulas > 0 && <p>Aulas: {moeda(r.valor_aulas)}</p>}
-                  {r.taxa_mensal > 0 && <p>Taxa: {moeda(r.taxa_mensal)}</p>}
-                  <p className="font-semibold text-gray-800">Total: {moeda(r.total)}</p>
-                </div>
-                <button
-                  onClick={() => togglePago(r.id, r.pago)}
-                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                    r.pago
-                      ? 'border-orange-200 text-orange-600 hover:bg-orange-50'
-                      : 'border-green-200 text-green-600 hover:bg-green-50'
-                  }`}
-                >
-                  {r.pago ? 'Desfazer' : 'Marcar pago'}
-                </button>
-              </div>
-            </div>
+            <CardAluno
+              key={r.id}
+              nome={r.nome_aluno}
+              aulas={r.valor_aulas}
+              aulasLabel={`${r.quantidade_aulas} aula${r.quantidade_aulas !== 1 ? 's' : ''}`}
+              taxaMensal={r.taxa_mensal}
+              valorTotal={r.total}
+              pago={r.pago}
+              onToggle={() => togglePagoFechado(r.id, r.pago)}
+              toggling={toggling === r.id}
+            />
           ))}
+        </div>
+      ) : mesAberto.length === 0 ? (
+        <div className="text-center text-gray-400 text-sm py-6 bg-white rounded-xl border border-gray-100">
+          Nenhum aluno com atividade neste mês.
+        </div>
+      ) : (
+        /* Mês aberto: lista estimada */
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-gray-400 text-center">Valores estimados · mês não fechado</p>
+          {mesAberto.map((item) => {
+            const qtdAulas = Math.max(item.aulas_agendadas, item.aulas_recorrentes)
+            const valorAulas = item.valor_estimado - item.taxa_mensal
+            return (
+              <CardAluno
+                key={item.aluno_id}
+                nome={item.nome_aluno}
+                aulas={valorAulas}
+                aulasLabel={`~${qtdAulas} aula${qtdAulas !== 1 ? 's' : ''}`}
+                taxaMensal={item.taxa_mensal}
+                valorTotal={item.valor_estimado}
+                pago={item.pago}
+                onToggle={() => togglePagoAberto(item)}
+                toggling={toggling === `aberto-${item.aluno_id}`}
+              />
+            )
+          })}
         </div>
       )}
     </div>

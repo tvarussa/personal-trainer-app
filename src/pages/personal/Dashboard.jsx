@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../services/api'
 
@@ -15,23 +15,52 @@ function fmtDataLabel(dataStr) {
   return new Date(ano, mes - 1, dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-function ListaAulas({ aulas }) {
+function ListaAulas({ aulas, onConfirmar, onToggleCobrar, toggling, confirmando }) {
   if (aulas.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-3">Nenhuma aula</p>
   }
   return (
     <div className="flex flex-col gap-2">
-      {aulas.map((a, i) => (
-        <div key={i} className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-800 w-12">{fmtHora(a.data_hora)}</span>
-            <span className="text-sm text-gray-700">{a.aluno}</span>
+      {aulas.map((a, i) => {
+        const key = a.agendamento_id ?? `rec-${a.recorrencia_id}`
+        return (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-semibold text-gray-800 w-12 shrink-0">{fmtHora(a.data_hora)}</span>
+              <span className="text-sm text-gray-700 truncate">{a.aluno}</span>
+              {a.recorrente && (
+                <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full shrink-0">Rec</span>
+              )}
+            </div>
+            {onConfirmar && (
+              <div className="flex gap-1 shrink-0">
+                {a.realizado ? (
+                  <span className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-medium">✓ Feita</span>
+                ) : (
+                  <button
+                    onClick={() => onConfirmar(a, key)}
+                    disabled={confirmando === key}
+                    className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 transition-colors"
+                  >
+                    {confirmando === key ? '...' : 'Confirmar'}
+                  </button>
+                )}
+                <button
+                  onClick={() => onToggleCobrar(a, key)}
+                  disabled={toggling === key}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors disabled:opacity-40 ${
+                    a.cobrar
+                      ? 'border-green-200 text-green-700 bg-green-50'
+                      : 'border-gray-200 text-gray-400 bg-gray-50 line-through'
+                  }`}
+                >
+                  {a.cobrar ? 'Cobrar' : 'Grátis'}
+                </button>
+              </div>
+            )}
           </div>
-          {a.recorrente && (
-            <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-2 py-0.5 rounded-full">Recorrente</span>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -39,10 +68,43 @@ function ListaAulas({ aulas }) {
 export default function PersonalDashboard() {
   const { user } = useAuth()
   const [dados, setDados] = useState(null)
+  const [toggling, setToggling] = useState(null)
+  const [confirmando, setConfirmando] = useState(null)
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
     api.get('/dashboard/personal').then(r => setDados(r.data)).catch(() => {})
   }, [])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function confirmarAula(aula, key) {
+    setConfirmando(key)
+    try {
+      await api.patch('/dashboard/confirmar-aula', {
+        agendamento_id: aula.agendamento_id ?? null,
+        recorrencia_id: aula.recorrencia_id ?? null,
+        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
+      })
+      carregar()
+    } finally {
+      setConfirmando(null)
+    }
+  }
+
+  async function toggleCobrar(aula, key) {
+    setToggling(key)
+    try {
+      await api.patch('/dashboard/marcar-cobranca', {
+        agendamento_id: aula.agendamento_id ?? null,
+        recorrencia_id: aula.recorrencia_id ?? null,
+        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
+        cobrar: !aula.cobrar,
+      })
+      carregar()
+    } finally {
+      setToggling(null)
+    }
+  }
 
   return (
     <div className="px-4 py-6 flex flex-col gap-4">
@@ -74,7 +136,13 @@ export default function PersonalDashboard() {
 
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Aulas de hoje</h2>
-        <ListaAulas aulas={dados?.lista_hoje ?? []} />
+        <ListaAulas
+          aulas={dados?.lista_hoje ?? []}
+          onConfirmar={confirmarAula}
+          onToggleCobrar={toggleCobrar}
+          toggling={toggling}
+          confirmando={confirmando}
+        />
       </div>
 
       {dados?.proximo_dia && (

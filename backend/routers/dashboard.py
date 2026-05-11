@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from datetime import datetime, date, timedelta
-from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento, OcorrenciaCancelada, Recorrencia
+from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento, TipoAgendamento, OcorrenciaCancelada, OcorrenciaGratuita, Recorrencia
 from routers.auth import require_personal, get_usuario_atual
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -17,7 +18,7 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
         db.query(Agendamento, SlotDisponivel)
         .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
         .filter(
-            Agendamento.status == StatusAgendamento.confirmado,
+            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
             SlotDisponivel.data_hora >= dia_inicio,
             SlotDisponivel.data_hora <= dia_fim,
         )
@@ -32,11 +33,19 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
             "data_hora": slot.data_hora,
             "aluno": ag.aluno.usuario.nome if ag.aluno and ag.aluno.usuario else "—",
             "recorrente": False,
+            "agendamento_id": ag.id,
+            "recorrencia_id": None,
+            "cobrar": not getattr(ag, "nao_cobrar", False),
+            "realizado": ag.status == StatusAgendamento.realizado,
         })
 
     canceladas_ids = {
         oc.recorrencia_id
         for oc in db.query(OcorrenciaCancelada).filter(OcorrenciaCancelada.data == dia_str).all()
+    }
+    gratuitas_ids = {
+        og.recorrencia_id
+        for og in db.query(OcorrenciaGratuita).filter(OcorrenciaGratuita.data == dia_str).all()
     }
 
     for r in db.query(Recorrencia).filter(Recorrencia.dia_semana == dia.weekday(), Recorrencia.ativo == True).all():  # noqa: E712
@@ -47,6 +56,10 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
             "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
             "aluno": r.aluno.usuario.nome if r.aluno and r.aluno.usuario else "—",
             "recorrente": True,
+            "agendamento_id": None,
+            "recorrencia_id": r.id,
+            "cobrar": r.id not in gratuitas_ids,
+            "realizado": False,
         })
 
     return sorted(aulas, key=lambda x: x["data_hora"])
@@ -171,3 +184,79 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
         "situacao": "pago" if (fin and fin.pago) else "pendente" if fin else "em_dia",
         "cancelamentos_mes": cancelamentos_mes,
     }
+
+
+class MarcarCobranca(BaseModel):
+    agendamento_id: int | None = None
+    recorrencia_id: int | None = None
+    data: str | None = None  # "YYYY-MM-DD" — obrigatório quando recorrencia_id
+    cobrar: bool
+
+
+@router.patch("/marcar-cobranca")
+def marcar_cobranca(dados: MarcarCobranca, db: Session = Depends(get_db), _=Depends(require_personal)):
+    if dados.agendamento_id:
+        ag = db.query(Agendamento).filter(Agendamento.id == dados.agendamento_id).first()
+        if not ag:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+        ag.nao_cobrar = not dados.cobrar
+        db.commit()
+        return {"ok": True}
+
+    if dados.recorrencia_id and dados.data:
+        existente = db.query(OcorrenciaGratuita).filter(
+            OcorrenciaGratuita.recorrencia_id == dados.recorrencia_id,
+            OcorrenciaGratuita.data == dados.data,
+        ).first()
+        if dados.cobrar and existente:
+            db.delete(existente)
+            db.commit()
+        elif not dados.cobrar and not existente:
+            db.add(OcorrenciaGratuita(recorrencia_id=dados.recorrencia_id, data=dados.data))
+            db.commit()
+        return {"ok": True}
+
+    raise HTTPException(status_code=400, detail="Informe agendamento_id ou recorrencia_id + data")
+
+
+class ConfirmarAula(BaseModel):
+    agendamento_id: int | None = None
+    recorrencia_id: int | None = None
+    data: str | None = None  # "YYYY-MM-DD" — obrigatório quando recorrencia_id
+
+
+@router.patch("/confirmar-aula")
+def confirmar_aula(dados: ConfirmarAula, db: Session = Depends(get_db), _=Depends(require_personal)):
+    if dados.agendamento_id:
+        ag = db.query(Agendamento).filter(Agendamento.id == dados.agendamento_id).first()
+        if not ag:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+        ag.status = StatusAgendamento.realizado
+        db.commit()
+        return {"ok": True, "agendamento_id": ag.id}
+
+    if dados.recorrencia_id and dados.data:
+        rec = db.query(Recorrencia).filter(Recorrencia.id == dados.recorrencia_id, Recorrencia.ativo == True).first()  # noqa: E712
+        if not rec:
+            raise HTTPException(status_code=404, detail="Recorrência não encontrada")
+        try:
+            hora, minuto = map(int, rec.horario.split(":"))
+            data_hora = datetime.strptime(dados.data, "%Y-%m-%d").replace(hour=hora, minute=minuto)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inválida")
+
+        slot = SlotDisponivel(data_hora=data_hora, disponivel=False)
+        db.add(slot)
+        db.flush()
+        ag = Agendamento(
+            aluno_id=rec.aluno_id,
+            slot_id=slot.id,
+            tipo=TipoAgendamento.recorrente,
+            status=StatusAgendamento.realizado,
+        )
+        db.add(ag)
+        db.commit()
+        db.refresh(ag)
+        return {"ok": True, "agendamento_id": ag.id}
+
+    raise HTTPException(status_code=400, detail="Informe agendamento_id ou recorrencia_id + data")

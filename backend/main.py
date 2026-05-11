@@ -18,19 +18,24 @@ async def lifespan(app: FastAPI):
 
 
 def _migrar_db():
-    from sqlalchemy import text
-    from sqlalchemy import inspect as sa_inspect
-    insp = sa_inspect(engine)
-    with engine.connect() as conn:
+    from sqlalchemy import text, inspect as sa_inspect
+
+    migrações = [
+        ("alunos", "academia_id", "ALTER TABLE alunos ADD COLUMN academia_id INTEGER REFERENCES academias(id)"),
+        ("agendamentos", "nao_cobrar", "ALTER TABLE agendamentos ADD COLUMN nao_cobrar BOOLEAN DEFAULT FALSE"),
+    ]
+
+    for tabela, coluna, sql in migrações:
         try:
-            cols = [c["name"] for c in insp.get_columns("alunos")]
-            if "academia_id" not in cols:
-                conn.execute(text(
-                    "ALTER TABLE alunos ADD COLUMN academia_id INTEGER REFERENCES academias(id)"
-                ))
-            conn.commit()
-        except Exception:
-            conn.rollback()
+            with engine.connect() as conn:
+                insp = sa_inspect(engine)
+                cols = [c["name"] for c in insp.get_columns(tabela)]
+                if coluna not in cols:
+                    conn.execute(text(sql))
+                    conn.commit()
+                    print(f"[migração] {tabela}.{coluna} adicionada")
+        except Exception as e:
+            print(f"[migração] {tabela}.{coluna} ignorada: {e}")
 
 
 app = FastAPI(title="Personal Trainer API", version="1.0.0", lifespan=lifespan)
