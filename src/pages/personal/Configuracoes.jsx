@@ -64,7 +64,7 @@ export default function PersonalConfiguracoes() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      const nome = resp.headers.get('content-disposition')?.match(/filename="?([^"]+)"?/)?.[1] ?? 'backup.db'
+      const nome = resp.headers.get('content-disposition')?.match(/filename="?([^"]+)"?/)?.[1] ?? 'backup.json'
       link.download = nome
       link.click()
       URL.revokeObjectURL(url)
@@ -77,7 +77,7 @@ export default function PersonalConfiguracoes() {
   async function restaurarBackup(e) {
     const arquivo = e.target.files?.[0]
     if (!arquivo) return
-    if (!confirm(`Restaurar backup "${arquivo.name}"? O banco atual será substituído.`)) return
+    if (!window.confirm(`Restaurar backup "${arquivo.name}"? Todos os dados atuais serão substituídos.`)) return
     setRestaurando(true)
     setMensagem(null)
     try {
@@ -251,7 +251,7 @@ export default function PersonalConfiguracoes() {
         <div className="flex flex-col gap-4">
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <h2 className="font-semibold text-gray-700 mb-1">Baixar backup</h2>
-            <p className="text-sm text-gray-500 mb-3">Exporta o banco de dados completo para um arquivo .db</p>
+            <p className="text-sm text-gray-500 mb-3">Exporta todos os dados para um arquivo .json</p>
             <button
               onClick={baixarBackup}
               className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
@@ -262,11 +262,11 @@ export default function PersonalConfiguracoes() {
 
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <h2 className="font-semibold text-gray-700 mb-1">Restaurar backup</h2>
-            <p className="text-sm text-gray-500 mb-3">Substitui o banco atual por um arquivo .db de backup</p>
+            <p className="text-sm text-gray-500 mb-3">Restaura todos os dados a partir de um arquivo .json de backup</p>
             <input
               ref={inputArquivo}
               type="file"
-              accept=".db"
+              accept=".json"
               onChange={restaurarBackup}
               className="hidden"
             />
@@ -275,7 +275,7 @@ export default function PersonalConfiguracoes() {
               disabled={restaurando}
               className="w-full py-2.5 border border-orange-300 text-orange-600 rounded-xl text-sm font-medium hover:bg-orange-50 disabled:opacity-50"
             >
-              {restaurando ? 'Restaurando...' : 'Selecionar arquivo .db'}
+              {restaurando ? 'Restaurando...' : 'Selecionar arquivo .json'}
             </button>
           </div>
 

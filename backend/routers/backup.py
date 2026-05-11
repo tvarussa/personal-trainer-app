@@ -1,36 +1,44 @@
-import os
-import shutil
-import tempfile
+import io
+import json
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from database import get_db, BackupLog, DATABASE_URL, engine, Base
+from sqlalchemy import text
+from database import get_db, BackupLog, Base, engine
 from routers.auth import require_personal
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
-DB_PATH = DATABASE_URL.replace("sqlite:///", "").replace("./", "")
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", DB_PATH.lstrip("./"))
-DB_PATH = os.path.normpath(DB_PATH)
+_SKIP = {"backup_log"}
+
+
+def _serializar(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Tipo não serializável: {type(obj)}")
 
 
 @router.get("/download")
 def download_backup(db: Session = Depends(get_db), _=Depends(require_personal)):
-    if not os.path.exists(DB_PATH):
-        raise HTTPException(status_code=404, detail="Arquivo do banco não encontrado")
+    dados = {}
+    for table in Base.metadata.sorted_tables:
+        rows = db.execute(table.select()).mappings().all()
+        dados[table.name] = [dict(row) for row in rows]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    nome_arquivo = f"personal_trainer_backup_{timestamp}.db"
+    nome = f"backup_{timestamp}.json"
 
-    log = BackupLog(arquivo=nome_arquivo)
+    conteudo = json.dumps(dados, default=_serializar, ensure_ascii=False, indent=2)
+
+    log = BackupLog(arquivo=nome)
     db.add(log)
     db.commit()
 
-    return FileResponse(
-        path=DB_PATH,
-        media_type="application/octet-stream",
-        filename=nome_arquivo,
+    return StreamingResponse(
+        io.BytesIO(conteudo.encode("utf-8")),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
     )
 
 
@@ -54,44 +62,52 @@ async def restaurar_backup(
     db: Session = Depends(get_db),
     _=Depends(require_personal),
 ):
-    if not arquivo.filename.endswith(".db"):
-        raise HTTPException(status_code=400, detail="Apenas arquivos .db são aceitos")
+    if not arquivo.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Apenas arquivos .json são aceitos")
 
     conteudo = await arquivo.read()
+    try:
+        dados = json.loads(conteudo)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Arquivo JSON inválido")
 
-    # Valida tamanho mínimo (SQLite magic header tem 100 bytes)
-    if len(conteudo) < 100 or conteudo[:6] != b"SQLite":
-        raise HTTPException(status_code=400, detail="Arquivo não é um banco SQLite válido")
-
-    # Salva backup do banco atual antes de substituir
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_atual = DB_PATH + f".pre_restore_{timestamp}"
-    shutil.copy2(DB_PATH, backup_atual)
+    tabelas = list(Base.metadata.sorted_tables)
 
     try:
-        # Fecha todas as conexões SQLAlchemy antes de substituir o arquivo
-        engine.dispose()
+        for table in reversed(tabelas):
+            if table.name in _SKIP:
+                continue
+            db.execute(table.delete())
+        db.flush()
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-            tmp.write(conteudo)
-            tmp_path = tmp.name
-
-        shutil.move(tmp_path, DB_PATH)
-
-        # Recria tabelas caso o backup seja de versão anterior
-        Base.metadata.create_all(bind=engine)
+        for table in tabelas:
+            if table.name in _SKIP:
+                continue
+            rows = dados.get(table.name, [])
+            if rows:
+                db.execute(table.insert(), rows)
 
         log = BackupLog(arquivo=arquivo.filename, restaurado_em=datetime.now())
-        new_db = next(get_db())
-        new_db.add(log)
-        new_db.commit()
-
-        return {"ok": True, "mensagem": "Banco restaurado com sucesso. Reinicie o servidor."}
+        db.add(log)
+        db.commit()
 
     except Exception as e:
-        # Reverte para o banco anterior em caso de falha
-        shutil.copy2(backup_atual, DB_PATH)
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Falha na restauração: {str(e)}")
-    finally:
-        if os.path.exists(backup_atual):
-            os.remove(backup_atual)
+
+    # Reseta sequences do PostgreSQL para evitar conflito de IDs futuros
+    try:
+        with engine.connect() as conn:
+            for table in tabelas:
+                if table.name in _SKIP:
+                    continue
+                for col in table.primary_key.columns:
+                    conn.execute(text(
+                        f"SELECT setval(pg_get_serial_sequence('{table.name}', '{col.name}'), "
+                        f"COALESCE((SELECT MAX({col.name}) FROM {table.name}), 1))"
+                    ))
+            conn.commit()
+    except Exception:
+        pass
+
+    return {"ok": True, "mensagem": "Backup restaurado com sucesso"}
