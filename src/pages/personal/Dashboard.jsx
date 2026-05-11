@@ -15,7 +15,7 @@ function fmtDataLabel(dataStr) {
   return new Date(ano, mes - 1, dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-function ListaAulas({ aulas, onConfirmar, onToggleCobrar, toggling, confirmando }) {
+function ListaAulas({ aulas, onToggleCobrar, toggling }) {
   if (aulas.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-3">Nenhuma aula</p>
   }
@@ -32,31 +32,18 @@ function ListaAulas({ aulas, onConfirmar, onToggleCobrar, toggling, confirmando 
                 <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full shrink-0">Rec</span>
               )}
             </div>
-            {onConfirmar && (
-              <div className="flex gap-1 shrink-0">
-                {a.realizado ? (
-                  <span className="text-xs px-2 py-1 rounded-lg bg-green-100 text-green-700 font-medium">✓ Feita</span>
-                ) : (
-                  <button
-                    onClick={() => onConfirmar(a, key)}
-                    disabled={confirmando === key}
-                    className="text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 transition-colors"
-                  >
-                    {confirmando === key ? '...' : 'Confirmar'}
-                  </button>
-                )}
-                <button
-                  onClick={() => onToggleCobrar(a, key)}
-                  disabled={toggling === key}
-                  className={`text-xs px-2 py-1 rounded-lg border transition-colors disabled:opacity-40 ${
-                    a.cobrar
-                      ? 'border-green-200 text-green-700 bg-green-50'
-                      : 'border-gray-200 text-gray-400 bg-gray-50 line-through'
-                  }`}
-                >
-                  {a.cobrar ? 'Cobrar' : 'Grátis'}
-                </button>
-              </div>
+            {onToggleCobrar && (
+              <button
+                onClick={() => onToggleCobrar(a, key)}
+                disabled={toggling === key}
+                className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
+                  a.cobrar
+                    ? 'border-green-200 text-green-700 bg-green-50'
+                    : 'border-gray-200 text-gray-400 bg-gray-50 line-through'
+                }`}
+              >
+                {a.cobrar ? 'Cobrar' : 'Grátis'}
+              </button>
             )}
           </div>
         )
@@ -69,27 +56,12 @@ export default function PersonalDashboard() {
   const { user } = useAuth()
   const [dados, setDados] = useState(null)
   const [toggling, setToggling] = useState(null)
-  const [confirmando, setConfirmando] = useState(null)
 
   const carregar = useCallback(() => {
     api.get('/dashboard/personal').then(r => setDados(r.data)).catch(() => {})
   }, [])
 
   useEffect(() => { carregar() }, [carregar])
-
-  async function confirmarAula(aula, key) {
-    setConfirmando(key)
-    try {
-      await api.patch('/dashboard/confirmar-aula', {
-        agendamento_id: aula.agendamento_id ?? null,
-        recorrencia_id: aula.recorrencia_id ?? null,
-        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
-      })
-      carregar()
-    } finally {
-      setConfirmando(null)
-    }
-  }
 
   async function toggleCobrar(aula, key) {
     setToggling(key)
@@ -138,10 +110,8 @@ export default function PersonalDashboard() {
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Aulas de hoje</h2>
         <ListaAulas
           aulas={dados?.lista_hoje ?? []}
-          onConfirmar={confirmarAula}
           onToggleCobrar={toggleCobrar}
           toggling={toggling}
-          confirmando={confirmando}
         />
       </div>
 
