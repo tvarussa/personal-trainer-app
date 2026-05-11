@@ -13,6 +13,7 @@ import PersonalCalendario from './pages/personal/Calendario'
 import PersonalAlunos from './pages/personal/Alunos'
 import PersonalFinanceiro from './pages/personal/Financeiro'
 import PersonalConfiguracoes from './pages/personal/Configuracoes'
+import PersonalAcademias from './pages/personal/Academias'
 
 function AlunoLayout({ children }) {
   return (
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/personal/alunos" element={<PersonalLayout><PersonalAlunos /></PersonalLayout>} />
           <Route path="/personal/financeiro" element={<PersonalLayout><PersonalFinanceiro /></PersonalLayout>} />
           <Route path="/personal/configuracoes" element={<PersonalLayout><PersonalConfiguracoes /></PersonalLayout>} />
+          <Route path="/personal/academias" element={<PersonalLayout><PersonalAcademias /></PersonalLayout>} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

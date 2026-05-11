@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
 const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
@@ -20,8 +21,8 @@ function Modal({ titulo, onFechar, children }) {
   )
 }
 
-function FormAluno({ inicial, onSalvar, onFechar }) {
-  const [form, setForm] = useState(inicial || { nome: '', email: '', telefone: '', senha: '', preco_por_aula: '', taxa_mensal: '', observacoes: '' })
+function FormAluno({ inicial, academias, onSalvar, onFechar }) {
+  const [form, setForm] = useState(inicial || { nome: '', email: '', telefone: '', senha: '', preco_por_aula: '', taxa_mensal: '', observacoes: '', academia_id: '' })
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
   const editando = !!inicial?.id
@@ -39,6 +40,7 @@ function FormAluno({ inicial, onSalvar, onFechar }) {
         ...form,
         preco_por_aula: parseFloat(form.preco_por_aula) || 0,
         taxa_mensal: parseFloat(form.taxa_mensal) || 0,
+        academia_id: form.academia_id ? Number(form.academia_id) : null,
       })
     } catch (err) {
       setErro(err.response?.data?.detail || 'Erro ao salvar')
@@ -92,6 +94,22 @@ function FormAluno({ inicial, onSalvar, onFechar }) {
         </div>
       </div>
 
+      {academias?.length > 0 && (
+        <div>
+          <label className="text-xs text-gray-500">Academia</label>
+          <select
+            value={form.academia_id}
+            onChange={e => set('academia_id', e.target.value)}
+            className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="">Sem academia</option>
+            {academias.map(a => (
+              <option key={a.id} value={a.id}>{a.nome}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div>
         <label className="text-xs text-gray-500">Observações</label>
         <textarea
@@ -116,7 +134,7 @@ function FormAluno({ inicial, onSalvar, onFechar }) {
   )
 }
 
-function PainelAluno({ aluno, onFechar }) {
+function PainelAluno({ aluno, academias, onFechar }) {
   const [aba, setAba] = useState('dados')
   const [recorrencias, setRecorrencias] = useState([])
   const [novaRec, setNovaRec] = useState({ dia_semana: 0, horario: '07:00', frequencia: 'semanal' })
@@ -167,7 +185,8 @@ function PainelAluno({ aluno, onFechar }) {
 
       {aba === 'dados' && (
         <FormAluno
-          inicial={{ id: aluno.id, nome: aluno.nome, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '' }}
+          inicial={{ id: aluno.id, nome: aluno.nome, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '', academia_id: aluno.academia_id || '' }}
+          academias={academias}
           onSalvar={salvarDados}
           onFechar={() => onFechar(false)}
         />
@@ -241,7 +260,9 @@ function PainelAluno({ aluno, onFechar }) {
 }
 
 export default function PersonalAlunos() {
+  const navigate = useNavigate()
   const [alunos, setAlunos] = useState([])
+  const [academias, setAcademias] = useState([])
   const [carregando, setCarregando] = useState(false)
   const [modalNovo, setModalNovo] = useState(false)
   const [alunoSelecionado, setAlunoSelecionado] = useState(null)
@@ -250,8 +271,12 @@ export default function PersonalAlunos() {
   const carregar = useCallback(async () => {
     setCarregando(true)
     try {
-      const { data } = await api.get('/alunos/')
-      setAlunos(data)
+      const [{ data: alunosData }, { data: academiasData }] = await Promise.all([
+        api.get('/alunos/'),
+        api.get('/academias/'),
+      ])
+      setAlunos(alunosData)
+      setAcademias(academiasData)
     } finally {
       setCarregando(false)
     }
@@ -279,12 +304,20 @@ export default function PersonalAlunos() {
     <div className="px-4 py-6 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-800">Alunos</h1>
-        <button
-          onClick={() => setModalNovo(true)}
-          className="bg-blue-600 text-white text-sm px-4 py-2 rounded-xl font-medium hover:bg-blue-700"
-        >
-          + Novo
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate('/personal/academias')}
+            className="text-sm px-3 py-2 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50"
+          >
+            Academias
+          </button>
+          <button
+            onClick={() => setModalNovo(true)}
+            className="bg-blue-600 text-white text-sm px-4 py-2 rounded-xl font-medium hover:bg-blue-700"
+          >
+            + Novo
+          </button>
+        </div>
       </div>
 
       <input
@@ -312,6 +345,9 @@ export default function PersonalAlunos() {
               <div>
                 <p className="font-semibold text-gray-800">{a.nome}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{a.email}</p>
+                {a.academia_nome && (
+                  <p className="text-xs text-blue-500 mt-0.5">{a.academia_nome}</p>
+                )}
                 {(a.preco_por_aula > 0 || a.taxa_mensal > 0) && (
                   <p className="text-xs text-green-600 mt-1">
                     R$ {a.preco_por_aula.toFixed(2)}/aula
@@ -327,12 +363,12 @@ export default function PersonalAlunos() {
 
       {modalNovo && (
         <Modal titulo="Novo Aluno" onFechar={() => setModalNovo(false)}>
-          <FormAluno onSalvar={cadastrar} onFechar={() => setModalNovo(false)} />
+          <FormAluno academias={academias} onSalvar={cadastrar} onFechar={() => setModalNovo(false)} />
         </Modal>
       )}
 
       {alunoSelecionado && (
-        <PainelAluno aluno={alunoSelecionado} onFechar={fecharPainel} />
+        <PainelAluno aluno={alunoSelecionado} academias={academias} onFechar={fecharPainel} />
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from database import get_db, Usuario, Aluno, PerfilEnum
+from database import get_db, Usuario, Aluno, PerfilEnum, Academia
 from routers.auth import require_personal, gerar_hash_senha
 
 router = APIRouter(prefix="/alunos", tags=["alunos"])
@@ -15,6 +15,7 @@ class CriarAluno(BaseModel):
     preco_por_aula: float = 0.0
     taxa_mensal: float = 0.0
     observacoes: str | None = None
+    academia_id: int | None = None
 
 
 class AtualizarAluno(BaseModel):
@@ -24,6 +25,7 @@ class AtualizarAluno(BaseModel):
     taxa_mensal: float | None = None
     observacoes: str | None = None
     ativo: bool | None = None
+    academia_id: int | None = None
 
 
 class AlunoResponse(BaseModel):
@@ -51,6 +53,8 @@ def listar_alunos(db: Session = Depends(get_db), _=Depends(require_personal)):
             "taxa_mensal": a.taxa_mensal,
             "observacoes": a.observacoes,
             "ativo": a.usuario.ativo,
+            "academia_id": a.academia_id,
+            "academia_nome": a.academia.nome if a.academia else None,
         }
         for a in alunos
     ]
@@ -80,6 +84,7 @@ def criar_aluno(dados: CriarAluno, db: Session = Depends(get_db), _=Depends(requ
         preco_por_aula=dados.preco_por_aula,
         taxa_mensal=dados.taxa_mensal,
         observacoes=dados.observacoes,
+        academia_id=dados.academia_id,
     )
     db.add(aluno)
     db.commit()
@@ -105,6 +110,8 @@ def atualizar_aluno(aluno_id: int, dados: AtualizarAluno, db: Session = Depends(
         aluno.observacoes = dados.observacoes
     if dados.ativo is not None:
         aluno.usuario.ativo = dados.ativo
+    if dados.academia_id is not None:
+        aluno.academia_id = dados.academia_id
 
     db.commit()
     return {"ok": True}

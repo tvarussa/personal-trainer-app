@@ -67,16 +67,29 @@ class Usuario(Base):
     notificacoes = relationship("Notificacao", back_populates="destinatario")
 
 
+class Academia(Base):
+    __tablename__ = "academias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String, nullable=False)
+    endereco = Column(String, nullable=True)
+    ativo = Column(Boolean, default=True)
+
+    alunos = relationship("Aluno", back_populates="academia")
+
+
 class Aluno(Base):
     __tablename__ = "alunos"
 
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    academia_id = Column(Integer, ForeignKey("academias.id"), nullable=True)
     preco_por_aula = Column(Float, default=0.0)
     taxa_mensal = Column(Float, default=0.0)
     observacoes = Column(String)
 
     usuario = relationship("Usuario", back_populates="aluno")
+    academia = relationship("Academia", back_populates="alunos")
     agendamentos = relationship("Agendamento", back_populates="aluno")
     recorrencias = relationship("Recorrencia", back_populates="aluno")
     financeiros = relationship("Financeiro", back_populates="aluno")

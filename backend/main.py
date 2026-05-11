@@ -2,18 +2,35 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from database import criar_tabelas
-from routers import auth, usuarios, alunos, agendamentos, slots, financeiro, notificacoes, recorrencias, configuracoes, backup, bloqueios, dashboard
+from database import criar_tabelas, engine
+from routers import auth, usuarios, alunos, agendamentos, slots, financeiro, notificacoes, recorrencias, configuracoes, backup, bloqueios, dashboard, academias
 from services.scheduler import iniciar_scheduler, parar_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     criar_tabelas()
+    _migrar_db()
     _criar_personal_padrao()
     iniciar_scheduler()
     yield
     parar_scheduler()
+
+
+def _migrar_db():
+    from sqlalchemy import text
+    from sqlalchemy import inspect as sa_inspect
+    insp = sa_inspect(engine)
+    with engine.connect() as conn:
+        try:
+            cols = [c["name"] for c in insp.get_columns("alunos")]
+            if "academia_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE alunos ADD COLUMN academia_id INTEGER REFERENCES academias(id)"
+                ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
 
 app = FastAPI(title="Personal Trainer API", version="1.0.0", lifespan=lifespan)
@@ -40,6 +57,7 @@ app.include_router(configuracoes.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(bloqueios.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(academias.router, prefix="/api")
 
 
 def _criar_personal_padrao():
