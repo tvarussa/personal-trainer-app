@@ -4,5 +4,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "experimentalServices": {
+    "frontend": {
+      "routePrefix": "/",
+      "framework": "vite"
+    }
+  }
 }
