@@ -47,14 +47,18 @@ def criar_recorrencia(dados: CriarRecorrencia, db: Session = Depends(get_db), _=
     if not aluno:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
-    duplicada = db.query(Recorrencia).filter(
-        Recorrencia.aluno_id == dados.aluno_id,
+    conflito = db.query(Recorrencia).filter(
         Recorrencia.dia_semana == dados.dia_semana,
         Recorrencia.horario == dados.horario,
         Recorrencia.ativo == True,
     ).first()
-    if duplicada:
-        raise HTTPException(status_code=400, detail="Recorrência já existe para este aluno neste horário")
+    if conflito:
+        if conflito.aluno_id == dados.aluno_id:
+            raise HTTPException(status_code=400, detail="Recorrência já existe para este aluno neste horário")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Horário já ocupado pela recorrência de {conflito.aluno.usuario.nome}",
+        )
 
     r = Recorrencia(
         aluno_id=dados.aluno_id,
