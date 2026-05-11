@@ -17,8 +17,21 @@ async def lifespan(app: FastAPI):
     parar_scheduler()
 
 
+def _coluna_existe(conn, tabela: str, coluna: str) -> bool:
+    from sqlalchemy import text
+    is_sqlite = "sqlite" in str(engine.url)
+    if is_sqlite:
+        rows = conn.execute(text(f"PRAGMA table_info({tabela})")).fetchall()
+        return any(r[1] == coluna for r in rows)
+    rows = conn.execute(
+        text("SELECT 1 FROM information_schema.columns WHERE table_name=:t AND column_name=:c"),
+        {"t": tabela, "c": coluna},
+    ).fetchall()
+    return len(rows) > 0
+
+
 def _migrar_db():
-    from sqlalchemy import text, inspect as sa_inspect
+    from sqlalchemy import text
 
     migrações = [
         ("alunos", "academia_id", "ALTER TABLE alunos ADD COLUMN academia_id INTEGER REFERENCES academias(id)"),
@@ -28,14 +41,14 @@ def _migrar_db():
     for tabela, coluna, sql in migrações:
         try:
             with engine.connect() as conn:
-                insp = sa_inspect(engine)
-                cols = [c["name"] for c in insp.get_columns(tabela)]
-                if coluna not in cols:
+                if not _coluna_existe(conn, tabela, coluna):
                     conn.execute(text(sql))
                     conn.commit()
                     print(f"[migração] {tabela}.{coluna} adicionada")
+                else:
+                    print(f"[migração] {tabela}.{coluna} já existe")
         except Exception as e:
-            print(f"[migração] {tabela}.{coluna} ignorada: {e}")
+            print(f"[migração] {tabela}.{coluna} erro: {e}")
 
 
 app = FastAPI(title="Personal Trainer API", version="1.0.0", lifespan=lifespan)
@@ -87,4 +100,11 @@ def _criar_personal_padrao():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            nao_cobrar_ok = _coluna_existe(conn, "agendamentos", "nao_cobrar")
+            ocg_ok = _coluna_existe(conn, "ocorrencias_gratuitas", "id") if not "sqlite" in str(engine.url) else True
+        return {"status": "ok", "nao_cobrar": nao_cobrar_ok, "ocorrencias_gratuitas": ocg_ok}
+    except Exception as e:
+        return {"status": "ok", "db_check_error": str(e)}
