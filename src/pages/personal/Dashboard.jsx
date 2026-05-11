@@ -6,11 +6,34 @@ function fmt(valor) {
   return valor?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) ?? 'R$ 0'
 }
 
-function fmtDataHora(dt) {
-  if (!dt) return '—'
-  const d = new Date(dt)
-  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) +
-    ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+function fmtHora(dt) {
+  return new Date(dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDataLabel(dataStr) {
+  const [ano, mes, dia] = dataStr.split('-').map(Number)
+  return new Date(ano, mes - 1, dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+function ListaAulas({ aulas }) {
+  if (aulas.length === 0) {
+    return <p className="text-sm text-gray-400 text-center py-3">Nenhuma aula</p>
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {aulas.map((a, i) => (
+        <div key={i} className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-800 w-12">{fmtHora(a.data_hora)}</span>
+            <span className="text-sm text-gray-700">{a.aluno}</span>
+          </div>
+          {a.recorrente && (
+            <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-2 py-0.5 rounded-full">Recorrente</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function PersonalDashboard() {
@@ -49,17 +72,18 @@ export default function PersonalDashboard() {
         </div>
       </div>
 
-      {dados?.proximas_aulas?.length > 0 && (
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Aulas de hoje</h2>
+        <ListaAulas aulas={dados?.lista_hoje ?? []} />
+      </div>
+
+      {dados?.proximo_dia && (
         <div className="bg-white rounded-xl border border-gray-100 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Próximas aulas</h2>
-          <div className="flex flex-col gap-2">
-            {dados.proximas_aulas.map((a) => (
-              <div key={a.id} className="flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-800">{a.aluno}</span>
-                <span className="text-gray-400 text-xs">{fmtDataHora(a.data_hora)}</span>
-              </div>
-            ))}
-          </div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">
+            Próximo dia com aulas
+          </h2>
+          <p className="text-xs text-gray-400 mb-3 capitalize">{fmtDataLabel(dados.proximo_dia.data)}</p>
+          <ListaAulas aulas={dados.proximo_dia.aulas} />
         </div>
       )}
     </div>
