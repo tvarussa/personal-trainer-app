@@ -422,7 +422,7 @@ export default function PersonalCalendario() {
   const contadorAulas = useMemo(() => {
     const counts = {}
     slots.forEach(s => {
-      if (!s.bloqueado_pelo_personal && !s.disponivel) {
+      if (s.agendamento_id || s.recorrencia) {
         const d = new Date(s.data_hora)
         const chave = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
         counts[chave] = (counts[chave] || 0) + 1
