@@ -53,12 +53,7 @@ export default function AlunoDashboard() {
         <p className="text-sm text-gray-500">Bem-vindo ao seu painel</p>
       </div>
 
-      {/* DEBUG TEMPORÁRIO — remover depois */}
-      <pre className="bg-gray-100 rounded p-2 text-xs overflow-auto max-h-40">
-        {JSON.stringify(dados, null, 2)}
-      </pre>
-
-      <div className="grid grid-cols-2 gap-3">
+<div className="grid grid-cols-2 gap-3">
         <div className="bg-blue-50 rounded-xl p-4">
           <p className="text-xs text-blue-600 font-medium">Aulas esta semana</p>
           <p className="text-2xl font-bold text-blue-800 mt-1">{dados?.aulas_semana ?? '—'}</p>

@@ -235,28 +235,9 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
 
 @router.get("/aluno")
 def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
-    import traceback as _tb
-    try:
-        return _dashboard_aluno_impl(db, usuario)
-    except Exception as exc:
-        print("ERRO dashboard_aluno:", _tb.format_exc())
-        return {
-            "_erro": str(exc),
-            "aulas_semana": 0,
-            "aulas_mes": 0,
-            "lista_semana": [],
-            "lista_proxima_semana": [],
-            "valor_projetado": 0.0,
-            "valor_devido": 0.0,
-            "valor_pago": 0.0,
-        }
-
-
-def _dashboard_aluno_impl(db: Session, usuario):
     aluno = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
     if not aluno:
         return {
-            "_debug": "aluno_nao_encontrado",
             "aulas_semana": 0,
             "aulas_mes": 0,
             "lista_semana": [],
@@ -396,16 +377,7 @@ def _dashboard_aluno_impl(db: Session, usuario):
     valor_devido = round(fin.total if (fin and not fin.pago) else 0.0, 2)
     valor_pago = round(fin.total if (fin and fin.pago) else 0.0, 2)
 
-    print(f"DEBUG dashboard_aluno: aluno_id={aluno.id} n_rec={len(recorrencias)} n_ags={len(ags)} aulas_semana={aulas_semana} aulas_mes={aulas_mes} semana_inicio={semana_inicio}")
-
     return {
-        "_debug": {
-            "aluno_id": aluno.id,
-            "n_recorrencias": len(recorrencias),
-            "n_ags_window": len(ags),
-            "semana_inicio": str(semana_inicio),
-            "aulas_semana": aulas_semana,
-        },
         "aulas_semana": aulas_semana,
         "aulas_mes": aulas_mes,
         "lista_semana": lista_semana,
