@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from database import get_db, Usuario, Aluno, PerfilEnum, Academia
+from database import get_db, Usuario, Aluno, PerfilEnum, Academia, Recorrencia
 from routers.auth import require_personal, gerar_hash_senha
 
 router = APIRouter(prefix="/alunos", tags=["alunos"])
@@ -41,7 +41,7 @@ class AlunoResponse(BaseModel):
 
 @router.get("/")
 def listar_alunos(db: Session = Depends(get_db), _=Depends(require_personal)):
-    alunos = db.query(Aluno).join(Usuario).filter(Usuario.ativo == True).all()
+    alunos = db.query(Aluno).join(Usuario).order_by(Usuario.ativo.desc(), Usuario.nome).all()
     return [
         {
             "id": a.id,
@@ -110,6 +110,8 @@ def atualizar_aluno(aluno_id: int, dados: AtualizarAluno, db: Session = Depends(
         aluno.observacoes = dados.observacoes
     if dados.ativo is not None:
         aluno.usuario.ativo = dados.ativo
+        if not dados.ativo:
+            db.query(Recorrencia).filter(Recorrencia.aluno_id == aluno_id).update({"ativo": False})
     if dados.academia_id is not None:
         aluno.academia_id = dados.academia_id
 

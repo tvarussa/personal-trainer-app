@@ -120,6 +120,25 @@ function FormAluno({ inicial, academias, onSalvar, onFechar }) {
         />
       </div>
 
+      {editando && (
+        <div className="flex items-center justify-between py-3 border-t border-gray-100 mt-1">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Aluno ativo</p>
+            <p className="text-xs text-gray-400">Ao inativar, recorrências são removidas e o login é bloqueado</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (form.ativo && !window.confirm('Ao inativar, todas as recorrências serão removidas e o aluno não poderá mais fazer login. Continuar?')) return
+              set('ativo', !form.ativo)
+            }}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${form.ativo ? 'bg-blue-600' : 'bg-gray-300'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.ativo ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
+      )}
+
       {erro && <p className="text-sm text-red-500">{erro}</p>}
 
       <div className="flex gap-2 pt-1">
@@ -185,7 +204,7 @@ function PainelAluno({ aluno, academias, onFechar }) {
 
       {aba === 'dados' && (
         <FormAluno
-          inicial={{ id: aluno.id, nome: aluno.nome, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '', academia_id: aluno.academia_id || '' }}
+          inicial={{ id: aluno.id, nome: aluno.nome, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '', academia_id: aluno.academia_id || '', ativo: aluno.ativo }}
           academias={academias}
           onSalvar={salvarDados}
           onFechar={() => onFechar(false)}
@@ -340,10 +359,15 @@ export default function PersonalAlunos() {
             <button
               key={a.id}
               onClick={() => setAlunoSelecionado(a)}
-              className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+              className={`bg-white rounded-xl border p-4 flex items-center justify-between text-left transition-colors ${a.ativo ? 'border-gray-100 hover:bg-gray-50 active:bg-gray-100' : 'border-gray-100 opacity-60'}`}
             >
               <div>
-                <p className="font-semibold text-gray-800">{a.nome}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-gray-800">{a.nome}</p>
+                  {!a.ativo && (
+                    <span className="text-xs bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded-full">Inativo</span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 mt-0.5">{a.email}</p>
                 {a.academia_nome && (
                   <p className="text-xs text-blue-500 mt-0.5">{a.academia_nome}</p>
