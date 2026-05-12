@@ -39,7 +39,9 @@ export default function AlunoDashboard() {
   const [dados, setDados] = useState(null)
 
   useEffect(() => {
-    api.get('/dashboard/aluno').then(r => setDados(r.data)).catch(() => {})
+    api.get('/dashboard/aluno')
+      .then(r => setDados(r.data))
+      .catch(err => setDados({ _erro: String(err), _status: err?.response?.status }))
   }, [])
 
   return (
@@ -50,6 +52,11 @@ export default function AlunoDashboard() {
         </h1>
         <p className="text-sm text-gray-500">Bem-vindo ao seu painel</p>
       </div>
+
+      {/* DEBUG TEMPORÁRIO — remover depois */}
+      <pre className="bg-gray-100 rounded p-2 text-xs overflow-auto max-h-40">
+        {JSON.stringify(dados, null, 2)}
+      </pre>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-blue-50 rounded-xl p-4">
