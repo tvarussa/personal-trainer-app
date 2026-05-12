@@ -191,6 +191,43 @@ function AbaFinanceiroAluno({ alunoId }) {
 
   useEffect(() => { carregar() }, [carregar])
 
+  async function toggleCobrarAula(aula) {
+    const key = `cobrar-${aula.agendamento_id ?? aula.recorrencia_id}-${aula.data_hora}`
+    setToggling(key)
+    try {
+      await api.patch('/dashboard/marcar-cobranca', {
+        agendamento_id: aula.agendamento_id ?? null,
+        recorrencia_id: aula.recorrencia_id ?? null,
+        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
+        cobrar: !aula.cobrar,
+      })
+      await carregar()
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  async function excluirAula(aula) {
+    if (!window.confirm('Excluir esta aula?')) return
+    const key = `excluir-${aula.agendamento_id ?? aula.recorrencia_id}-${aula.data_hora}`
+    setToggling(key)
+    try {
+      if (aula.agendamento_id) {
+        await api.post(`/agendamentos/${aula.agendamento_id}/cancelar`)
+      } else {
+        await api.post(`/recorrencias/${aula.recorrencia_id}/cancelar-ocorrencia`, {
+          data: aula.data_hora.slice(0, 10),
+        })
+      }
+      await carregar()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      alert(typeof detail === 'string' ? detail : 'Erro ao excluir aula')
+    } finally {
+      setToggling(null)
+    }
+  }
+
   async function togglePagoAula(aula) {
     const key = aula.agendamento_id ?? `rec-${aula.recorrencia_id}-${aula.data_hora}`
     setToggling(key)
@@ -266,11 +303,13 @@ function AbaFinanceiroAluno({ alunoId }) {
       ) : (
         <div className="flex flex-col">
           {detalhe.aulas.map((a, i) => {
-            const key = a.agendamento_id ?? `rec-${a.recorrencia_id}-${a.data_hora}`
+            const keyPago = a.agendamento_id ?? `rec-${a.recorrencia_id}-${a.data_hora}`
+            const keyCobrar = `cobrar-${a.agendamento_id ?? a.recorrencia_id}-${a.data_hora}`
+            const keyExcluir = `excluir-${a.agendamento_id ?? a.recorrencia_id}-${a.data_hora}`
             const d = new Date(a.data_hora)
             const passado = d <= hoje
             return (
-              <div key={i} className={`flex items-center gap-2 py-2 border-b border-gray-50 last:border-0 ${!a.cobrar ? 'opacity-50' : ''}`}>
+              <div key={i} className="flex items-center gap-2 py-2 border-b border-gray-50 last:border-0">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="text-xs text-gray-500 capitalize">{d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
@@ -278,19 +317,40 @@ function AbaFinanceiroAluno({ alunoId }) {
                     {a.recorrente && <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1 py-0.5 rounded-full">Rec</span>}
                     {!passado && <span className="text-xs bg-blue-50 text-blue-400 border border-blue-100 px-1 py-0.5 rounded-full">Futuro</span>}
                   </div>
-                  {!a.cobrar && <p className="text-xs text-gray-400 mt-0.5">Não cobrada</p>}
                 </div>
-                {a.cobrar && (
-                  <button
-                    onClick={() => togglePagoAula(a)}
-                    disabled={toggling === key}
-                    className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
-                      a.pago ? 'bg-green-50 border-green-200 text-green-700' : 'bg-orange-50 border-orange-200 text-orange-600'
-                    }`}
-                  >
-                    {toggling === key ? '...' : a.pago ? 'Pago' : 'Pendente'}
-                  </button>
-                )}
+                <div className="flex flex-col gap-1 shrink-0 items-end">
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => toggleCobrarAula(a)}
+                      disabled={!!toggling}
+                      className={`text-xs px-2 py-0.5 rounded-lg border transition-colors disabled:opacity-40 ${
+                        a.cobrar ? 'bg-gray-50 border-gray-200 text-gray-600' : 'bg-red-50 border-red-200 text-red-500'
+                      }`}
+                    >
+                      {toggling === keyCobrar ? '...' : a.cobrar ? 'Cobrar' : 'Grátis'}
+                    </button>
+                    {!a.realizado && (
+                      <button
+                        onClick={() => excluirAula(a)}
+                        disabled={!!toggling}
+                        className="text-xs px-2 py-0.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors disabled:opacity-40"
+                      >
+                        {toggling === keyExcluir ? '...' : '✕'}
+                      </button>
+                    )}
+                  </div>
+                  {a.cobrar && (
+                    <button
+                      onClick={() => togglePagoAula(a)}
+                      disabled={!!toggling}
+                      className={`text-xs px-2 py-0.5 rounded-lg border transition-colors disabled:opacity-40 ${
+                        a.pago ? 'bg-green-50 border-green-200 text-green-700' : 'bg-orange-50 border-orange-200 text-orange-600'
+                      }`}
+                    >
+                      {toggling === keyPago ? '...' : a.pago ? 'Pago' : 'Pendente'}
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
