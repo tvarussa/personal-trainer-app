@@ -421,40 +421,15 @@ export default function PersonalCalendario() {
 
   const contadorAulas = useMemo(() => {
     const counts = {}
-    const horariosPorDia = {}
-
     slots.forEach(s => {
       if (!s.bloqueado_pelo_personal && !s.disponivel) {
         const d = new Date(s.data_hora)
         const chave = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
-        const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        if (!horariosPorDia[chave]) horariosPorDia[chave] = new Set()
-        horariosPorDia[chave].add(hora)
         counts[chave] = (counts[chave] || 0) + 1
       }
     })
-
-    if (recorrencias.length > 0) {
-      const hoje = new Date()
-      for (let i = 0; i < 400; i++) {
-        const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + i)
-        const chave = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
-        const jsWeekday = d.getDay()
-        recorrencias.forEach(r => {
-          if (backendParaJsWeekday(r.dia_semana) === jsWeekday) {
-            const realHorarios = horariosPorDia[chave] || new Set()
-            if (!realHorarios.has(r.horario)) {
-              if (!horariosPorDia[chave]) horariosPorDia[chave] = new Set()
-              horariosPorDia[chave].add(r.horario)
-              counts[chave] = (counts[chave] || 0) + 1
-            }
-          }
-        })
-      }
-    }
-
     return counts
-  }, [slots, recorrencias])
+  }, [slots])
 
   const marcadoresCombinados = { ...marcadoresBloqueios }
   Object.entries(marcadores).forEach(([k, v]) => {
