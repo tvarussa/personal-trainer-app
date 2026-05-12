@@ -88,12 +88,12 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
             Cancelar
           </button>
         )}
-        {!ocupado && !virtual && !bloqueado && (
+        {!virtual && !ocupado && !bloqueado && (
           <button onClick={() => onAgendar(slot)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Agendar
           </button>
         )}
-        {!ocupado && !virtual && (
+        {!virtual && !ocupado && (
           bloqueado ? (
             <button onClick={() => onDesbloquear(slot.id)} className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
               Desbloquear
@@ -104,7 +104,7 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
             </button>
           )
         )}
-        {!ocupado && !virtual && (
+        {!virtual && (!ocupado || !slot.agendamento_id) && (
           <button onClick={() => onRemover(slot.id)} className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-50">
             Excluir
           </button>
