@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, date
 from calendar import monthrange
-from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, Usuario, StatusAgendamento
+from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, SlotDisponivel, Usuario, StatusAgendamento, OcorrenciaCancelada, OcorrenciaGratuita
 from routers.auth import require_personal, get_usuario_atual
 from utils import agora_brasil
 
@@ -354,3 +354,106 @@ def marcar_pago(financeiro_id: int, pago: bool = True, db: Session = Depends(get
     registro.pago = pago
     db.commit()
     return {"ok": True}
+
+
+@router.get("/detalhe-aluno")
+def detalhe_aluno(aluno_id: int, mes: str, db: Session = Depends(get_db), _=Depends(require_personal)):
+    aluno = db.query(Aluno).filter(Aluno.id == aluno_id).first()
+    if not aluno:
+        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+
+    try:
+        inicio, fim = _mes_para_datas(mes)
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="Formato inválido. Use YYYY-MM")
+
+    inicio_dt = datetime(inicio.year, inicio.month, inicio.day)
+    fim_dt = datetime(fim.year, fim.month, fim.day, 23, 59, 59)
+    mes_str_inicio = inicio.strftime("%Y-%m-%d")
+    mes_str_fim = fim.strftime("%Y-%m-%d")
+
+    ags = (
+        db.query(Agendamento, SlotDisponivel)
+        .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
+        .filter(
+            Agendamento.aluno_id == aluno_id,
+            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
+            SlotDisponivel.data_hora >= inicio_dt,
+            SlotDisponivel.data_hora <= fim_dt,
+        )
+        .all()
+    )
+
+    horarios_reais: dict[str, set] = {}
+    aulas = []
+    for ag, slot in ags:
+        dia_str = slot.data_hora.strftime("%Y-%m-%d")
+        hora_str = slot.data_hora.strftime("%H:%M")
+        horarios_reais.setdefault(dia_str, set()).add(hora_str)
+        aulas.append({
+            "data_hora": slot.data_hora,
+            "cobrar": not getattr(ag, "nao_cobrar", False),
+            "agendamento_id": ag.id,
+            "recorrencia_id": None,
+            "recorrente": False,
+        })
+
+    canceladas = {
+        (oc.recorrencia_id, oc.data)
+        for oc in db.query(OcorrenciaCancelada)
+        .join(Recorrencia, OcorrenciaCancelada.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno_id,
+            OcorrenciaCancelada.data >= mes_str_inicio,
+            OcorrenciaCancelada.data <= mes_str_fim,
+        ).all()
+    }
+    gratuitas = {
+        (og.recorrencia_id, og.data)
+        for og in db.query(OcorrenciaGratuita)
+        .join(Recorrencia, OcorrenciaGratuita.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno_id,
+            OcorrenciaGratuita.data >= mes_str_inicio,
+            OcorrenciaGratuita.data <= mes_str_fim,
+        ).all()
+    }
+
+    dias_no_mes = monthrange(inicio.year, inicio.month)[1]
+    for r in db.query(Recorrencia).filter(Recorrencia.aluno_id == aluno_id, Recorrencia.ativo == True).all():  # noqa: E712
+        for d in range(1, dias_no_mes + 1):
+            dia = date(inicio.year, inicio.month, d)
+            if dia.weekday() != r.dia_semana:
+                continue
+            dia_str = dia.strftime("%Y-%m-%d")
+            if (r.id, dia_str) in canceladas:
+                continue
+            hora_str = r.horario
+            if hora_str in horarios_reais.get(dia_str, set()):
+                continue
+            hora, minuto = map(int, hora_str.split(":"))
+            aulas.append({
+                "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
+                "cobrar": (r.id, dia_str) not in gratuitas,
+                "agendamento_id": None,
+                "recorrencia_id": r.id,
+                "recorrente": True,
+            })
+
+    aulas.sort(key=lambda x: x["data_hora"])
+
+    fin = db.query(Financeiro).filter(
+        Financeiro.aluno_id == aluno_id,
+        Financeiro.mes_referencia == mes,
+    ).first()
+
+    return {
+        "aluno_id": aluno_id,
+        "nome_aluno": aluno.usuario.nome if aluno.usuario else "—",
+        "mes_referencia": mes,
+        "taxa_mensal": aluno.taxa_mensal,
+        "preco_por_aula": aluno.preco_por_aula,
+        "aulas": aulas,
+        "financeiro_id": fin.id if fin else None,
+        "pago": fin.pago if fin else False,
+    }

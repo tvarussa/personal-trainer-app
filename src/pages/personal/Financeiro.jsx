@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import api from '../../services/api'
 
 const MESES_NOME = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -43,9 +43,9 @@ function SeletorMes({ valor, onChange }) {
   )
 }
 
-function CardAluno({ nome, aulas, aulasLabel, taxaMensal, valorTotal, pago, onToggle, toggling }) {
+function CardAluno({ nome, aulas, aulasLabel, taxaMensal, valorTotal, pago, onToggle, toggling, onClick }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4">
+    <div className="bg-white rounded-xl border border-gray-100 p-4 cursor-pointer active:bg-gray-50" onClick={onClick}>
       <div className="flex items-start justify-between mb-2">
         <div>
           <p className="font-semibold text-gray-800">{nome}</p>
@@ -63,7 +63,7 @@ function CardAluno({ nome, aulas, aulasLabel, taxaMensal, valorTotal, pago, onTo
           <p className="font-semibold text-gray-800">Total: {moeda(valorTotal)}</p>
         </div>
         <button
-          onClick={onToggle}
+          onClick={(e) => { e.stopPropagation(); onToggle() }}
           disabled={toggling}
           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
             pago
@@ -78,6 +78,153 @@ function CardAluno({ nome, aulas, aulasLabel, taxaMensal, valorTotal, pago, onTo
   )
 }
 
+function DetalheAluno({ alunoId, nome, mes, onClose, onAtualizar }) {
+  const [detalhe, setDetalhe] = useState(null)
+  const [carregando, setCarregando] = useState(true)
+  const [toggling, setToggling] = useState(null)
+  const [togglingPago, setTogglingPago] = useState(false)
+
+  const carregar = useCallback(async () => {
+    setCarregando(true)
+    try {
+      const { data } = await api.get(`/financeiro/detalhe-aluno?aluno_id=${alunoId}&mes=${mes}`)
+      setDetalhe(data)
+    } finally {
+      setCarregando(false)
+    }
+  }, [alunoId, mes])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function toggleCobrar(aula) {
+    const key = aula.agendamento_id ?? `rec-${aula.recorrencia_id}`
+    setToggling(key)
+    try {
+      await api.patch('/dashboard/marcar-cobranca', {
+        agendamento_id: aula.agendamento_id ?? null,
+        recorrencia_id: aula.recorrencia_id ?? null,
+        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
+        cobrar: !aula.cobrar,
+      })
+      await carregar()
+      onAtualizar?.()
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  async function togglePago() {
+    if (!detalhe) return
+    setTogglingPago(true)
+    try {
+      if (detalhe.financeiro_id) {
+        await api.patch(`/financeiro/${detalhe.financeiro_id}/pago?pago=${!detalhe.pago}`)
+      } else {
+        await api.post('/financeiro/marcar-pagamento-aluno', {
+          aluno_id: alunoId,
+          mes_referencia: mes,
+          pago: !detalhe.pago,
+        })
+      }
+      await carregar()
+      onAtualizar?.()
+    } finally {
+      setTogglingPago(false)
+    }
+  }
+
+  const aulasCount = detalhe?.aulas.filter(a => a.cobrar).length ?? 0
+  const totalCobrado = detalhe ? round2(aulasCount * detalhe.preco_por_aula + detalhe.taxa_mensal) : 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-t-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+          <div>
+            <p className="font-semibold text-gray-800">{nome}</p>
+            <p className="text-xs text-gray-400">{formatMes(mes)}</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-4 py-3 flex flex-col gap-2">
+          {carregando ? (
+            <p className="text-center text-gray-400 text-sm py-6">Carregando...</p>
+          ) : !detalhe || detalhe.aulas.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-6">Nenhuma aula neste mês</p>
+          ) : (
+            <>
+              {detalhe.aulas.map((a, i) => {
+                const key = a.agendamento_id ?? `rec-${a.recorrencia_id}`
+                const d = new Date(a.data_hora)
+                const dataLabel = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                const horaLabel = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                return (
+                  <div key={i} className="flex items-center justify-between gap-2 py-1">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm text-gray-600 capitalize">{dataLabel}</span>
+                        <span className="text-sm font-semibold text-gray-800">{horaLabel}</span>
+                        {a.recorrente && (
+                          <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full">Rec</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {a.cobrar ? moeda(detalhe.preco_por_aula) : 'Não cobrada'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => toggleCobrar(a)}
+                      disabled={toggling === key}
+                      className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
+                        a.cobrar
+                          ? 'border-green-200 text-green-700 bg-green-50'
+                          : 'border-red-200 text-red-600 bg-red-50'
+                      }`}
+                    >
+                      {a.cobrar ? 'Cobrada' : 'Não cobrada'}
+                    </button>
+                  </div>
+                )
+              })}
+
+              {detalhe.taxa_mensal > 0 && (
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-100">
+                  <span className="text-sm text-gray-600">Taxa mensal</span>
+                  <span className="text-sm font-medium text-gray-700">{moeda(detalhe.taxa_mensal)}</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {detalhe && (
+          <div className="px-4 py-3 border-t border-gray-100 shrink-0 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-gray-400">Total a cobrar</p>
+              <p className="font-bold text-gray-800">{moeda(totalCobrado)}</p>
+            </div>
+            <button
+              onClick={togglePago}
+              disabled={togglingPago}
+              className={`text-sm px-4 py-2 rounded-xl border font-medium transition-colors disabled:opacity-50 ${
+                detalhe.pago
+                  ? 'border-orange-200 text-orange-600 bg-orange-50'
+                  : 'border-green-200 text-green-600 bg-green-50'
+              }`}
+            >
+              {detalhe.pago ? 'Desfazer pagamento' : 'Marcar como pago'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function round2(n) { return Math.round(n * 100) / 100 }
+
 function AbaFinanceiro({ mes }) {
   const [resumo, setResumo] = useState(null)
   const [registros, setRegistros] = useState([])
@@ -85,6 +232,7 @@ function AbaFinanceiro({ mes }) {
   const [carregando, setCarregando] = useState(false)
   const [fechando, setFechando] = useState(false)
   const [toggling, setToggling] = useState(null)
+  const [detalheAberto, setDetalheAberto] = useState(null) // {alunoId, nome}
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -190,6 +338,7 @@ function AbaFinanceiro({ mes }) {
               pago={r.pago}
               onToggle={() => togglePagoFechado(r.id, r.pago)}
               toggling={toggling === r.id}
+              onClick={() => setDetalheAberto({ alunoId: r.aluno_id, nome: r.nome_aluno })}
             />
           ))}
         </div>
@@ -215,10 +364,21 @@ function AbaFinanceiro({ mes }) {
                 pago={item.pago}
                 onToggle={() => togglePagoAberto(item)}
                 toggling={toggling === `aberto-${item.aluno_id}`}
+                onClick={() => setDetalheAberto({ alunoId: item.aluno_id, nome: item.nome_aluno })}
               />
             )
           })}
         </div>
+      )}
+
+      {detalheAberto && (
+        <DetalheAluno
+          alunoId={detalheAberto.alunoId}
+          nome={detalheAberto.nome}
+          mes={mes}
+          onClose={() => setDetalheAberto(null)}
+          onAtualizar={carregar}
+        />
       )}
     </div>
   )
