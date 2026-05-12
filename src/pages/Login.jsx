@@ -29,8 +29,12 @@ export default function Login() {
       } else {
         navigate('/aluno')
       }
-    } catch {
-      setErro('Email ou senha incorretos.')
+    } catch (err) {
+      if (!err.response) {
+        setErro('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
+      } else {
+        setErro('Email ou senha incorretos. Verifique seus dados e tente novamente.')
+      }
     } finally {
       setCarregando(false)
     }
@@ -70,10 +74,6 @@ export default function Login() {
             />
           </div>
 
-          {erro && (
-            <p className="text-sm text-red-500 text-center">{erro}</p>
-          )}
-
           <button
             type="submit"
             disabled={carregando}
@@ -81,6 +81,13 @@ export default function Login() {
           >
             {carregando ? 'Entrando...' : 'Entrar'}
           </button>
+
+          {erro && (
+            <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2.5 flex items-start gap-2">
+              <span className="text-red-400 text-base leading-5 shrink-0">!</span>
+              <p className="text-sm text-red-600">{erro}</p>
+            </div>
+          )}
         </form>
       </div>
     </div>
