@@ -76,6 +76,9 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
         {ocupado && slot.nome_aluno && (
           <p className="text-xs text-blue-600 mt-0.5">{slot.nome_aluno}</p>
         )}
+        {slot.realizado && (
+          <p className="text-xs text-green-600 mt-0.5">Realizada</p>
+        )}
         {ocupado && virtual && (
           <p className="text-xs text-blue-400 mt-0.5">Recorrente</p>
         )}
@@ -104,7 +107,7 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
             </button>
           )
         )}
-        {!virtual && (!ocupado || !slot.agendamento_id) && (
+        {!virtual && (!ocupado || !slot.agendamento_id) && !slot.realizado && (
           <button onClick={() => onRemover(slot.id)} className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-50">
             Excluir
           </button>

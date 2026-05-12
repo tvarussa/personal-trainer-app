@@ -49,9 +49,11 @@ def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atua
         ag = s.agendamento
         nome_aluno = None
         agendamento_id = None
-        if ag and ag.status == StatusAgendamento.confirmado and ag.aluno and ag.aluno.usuario:
+        realizado = False
+        if ag and ag.status in (StatusAgendamento.confirmado, StatusAgendamento.realizado) and ag.aluno and ag.aluno.usuario:
             nome_aluno = ag.aluno.usuario.nome
             agendamento_id = ag.id
+            realizado = ag.status == StatusAgendamento.realizado
         resultado.append({
             "id": s.id,
             "data_hora": s.data_hora,
@@ -59,6 +61,7 @@ def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atua
             "bloqueado_pelo_personal": bloqueado,
             "nome_aluno": nome_aluno,
             "agendamento_id": agendamento_id,
+            "realizado": realizado,
         })
         dt_reais.add(s.data_hora.replace(second=0, microsecond=0))
 
