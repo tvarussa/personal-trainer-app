@@ -233,51 +233,6 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
     }
 
 
-def _aulas_aluno_do_dia(dia: date, aluno_id: int, db: Session) -> list[dict]:
-    """Aulas (reais confirmadas/realizadas + recorrentes ativas) de um aluno em um dia."""
-    dia_str = dia.strftime("%Y-%m-%d")
-    dia_inicio = datetime(dia.year, dia.month, dia.day)
-    dia_fim = datetime(dia.year, dia.month, dia.day, 23, 59, 59)
-
-    reais = (
-        db.query(Agendamento, SlotDisponivel)
-        .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
-        .filter(
-            Agendamento.aluno_id == aluno_id,
-            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
-            SlotDisponivel.data_hora >= dia_inicio,
-            SlotDisponivel.data_hora <= dia_fim,
-        )
-        .all()
-    )
-
-    horarios_reais: set[str] = set()
-    aulas: list[dict] = []
-    for ag, slot in reais:
-        horarios_reais.add(slot.data_hora.strftime("%H:%M"))
-        aulas.append({"data_hora": slot.data_hora, "recorrente": False})
-
-    canceladas_ids = {
-        oc.recorrencia_id
-        for oc in db.query(OcorrenciaCancelada).filter(OcorrenciaCancelada.data == dia_str).all()
-    }
-
-    for r in db.query(Recorrencia).filter(
-        Recorrencia.aluno_id == aluno_id,
-        Recorrencia.dia_semana == dia.weekday(),
-        Recorrencia.ativo == True,  # noqa: E712
-    ).all():
-        if r.id in canceladas_ids or r.horario in horarios_reais:
-            continue
-        hora, minuto = map(int, r.horario.split(":"))
-        aulas.append({
-            "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
-            "recorrente": True,
-        })
-
-    return sorted(aulas, key=lambda x: x["data_hora"])
-
-
 @router.get("/aluno")
 def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
     aluno = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
@@ -295,88 +250,130 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
     hoje = hoje_brasil()
     mes_ref = hoje.strftime("%Y-%m")
     dias_no_mes = monthrange(hoje.year, hoje.month)[1]
-
     semana_inicio = hoje - timedelta(days=hoje.weekday())
-    semana_dias = [semana_inicio + timedelta(days=i) for i in range(7)]
-    proxima_semana_dias = [semana_inicio + timedelta(days=7 + i) for i in range(7)]
 
-    lista_semana: list[dict] = []
-    for d in semana_dias:
-        lista_semana.extend(_aulas_aluno_do_dia(d, aluno.id, db))
-
-    lista_proxima_semana: list[dict] = []
-    for d in proxima_semana_dias:
-        lista_proxima_semana.extend(_aulas_aluno_do_dia(d, aluno.id, db))
-
-    aulas_semana = len(lista_semana)
-    aulas_mes = sum(
-        len(_aulas_aluno_do_dia(date(hoje.year, hoje.month, d), aluno.id, db))
-        for d in range(1, dias_no_mes + 1)
+    # Janela de busca: cobre o mês atual + próxima semana
+    proxima_semana_fim = semana_inicio + timedelta(days=14)
+    window_inicio = datetime(hoje.year, hoje.month, 1)
+    window_fim_dt = datetime(
+        proxima_semana_fim.year, proxima_semana_fim.month, proxima_semana_fim.day, 23, 59, 59
     )
-
-    # Valor projetado: aulas cobradas no mês × preço + taxa_mensal
-    mes_inicio_dt = datetime(hoje.year, hoje.month, 1)
     mes_fim_dt = datetime(hoje.year, hoje.month, dias_no_mes, 23, 59, 59)
-    mes_str_inicio = mes_inicio_dt.strftime("%Y-%m-%d")
+    mes_str_inicio = window_inicio.strftime("%Y-%m-%d")
     mes_str_fim = mes_fim_dt.strftime("%Y-%m-%d")
+    window_str_fim = window_fim_dt.strftime("%Y-%m-%d")
 
-    ags_mes = (
+    # 5 queries bulk — sem loops ao banco
+    ags = (
         db.query(Agendamento, SlotDisponivel)
         .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
         .filter(
             Agendamento.aluno_id == aluno.id,
             Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
-            SlotDisponivel.data_hora >= mes_inicio_dt,
-            SlotDisponivel.data_hora <= mes_fim_dt,
+            SlotDisponivel.data_hora >= window_inicio,
+            SlotDisponivel.data_hora <= window_fim_dt,
         )
         .all()
     )
-    horarios_reais_mes: dict[str, set] = {}
-    aulas_cobradas = 0
-    for ag, slot in ags_mes:
-        dia_str = slot.data_hora.strftime("%Y-%m-%d")
-        hora_str = slot.data_hora.strftime("%H:%M")
-        horarios_reais_mes.setdefault(dia_str, set()).add(hora_str)
-        if not getattr(ag, "nao_cobrar", False):
-            aulas_cobradas += 1
 
-    canceladas_mes = {
+    recorrencias = db.query(Recorrencia).filter(
+        Recorrencia.aluno_id == aluno.id,
+        Recorrencia.ativo == True,  # noqa: E712
+    ).all()
+
+    canceladas = {
         (oc.recorrencia_id, oc.data)
-        for oc in db.query(OcorrenciaCancelada).filter(
+        for oc in db.query(OcorrenciaCancelada)
+        .join(Recorrencia, OcorrenciaCancelada.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno.id,
             OcorrenciaCancelada.data >= mes_str_inicio,
-            OcorrenciaCancelada.data <= mes_str_fim,
+            OcorrenciaCancelada.data <= window_str_fim,
         ).all()
     }
-    gratuitas_mes = {
+
+    gratuitas = {
         (og.recorrencia_id, og.data)
-        for og in db.query(OcorrenciaGratuita).filter(
+        for og in db.query(OcorrenciaGratuita)
+        .join(Recorrencia, OcorrenciaGratuita.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno.id,
             OcorrenciaGratuita.data >= mes_str_inicio,
             OcorrenciaGratuita.data <= mes_str_fim,
         ).all()
     }
-
-    for r in db.query(Recorrencia).filter(
-        Recorrencia.aluno_id == aluno.id,
-        Recorrencia.ativo == True,  # noqa: E712
-    ).all():
-        for d in range(1, dias_no_mes + 1):
-            dia = date(hoje.year, hoje.month, d)
-            if dia.weekday() != r.dia_semana:
-                continue
-            dia_str = dia.strftime("%Y-%m-%d")
-            if (r.id, dia_str) in canceladas_mes or (r.id, dia_str) in gratuitas_mes:
-                continue
-            if r.horario in horarios_reais_mes.get(dia_str, set()):
-                continue
-            aulas_cobradas += 1
-
-    valor_projetado = round(aulas_cobradas * aluno.preco_por_aula + aluno.taxa_mensal, 2)
 
     fin = db.query(Financeiro).filter(
         Financeiro.aluno_id == aluno.id,
         Financeiro.mes_referencia == mes_ref,
     ).first()
 
+    # Indexa agendamentos reais em memória por dia
+    horarios_reais_por_dia: dict[str, set] = {}
+    ags_por_dia: dict[str, list] = {}
+    for ag, slot in ags:
+        dia_str = slot.data_hora.strftime("%Y-%m-%d")
+        hora_str = slot.data_hora.strftime("%H:%M")
+        horarios_reais_por_dia.setdefault(dia_str, set()).add(hora_str)
+        ags_por_dia.setdefault(dia_str, []).append({
+            "data_hora": slot.data_hora,
+            "recorrente": False,
+        })
+
+    def aulas_do_dia(dia: date) -> list[dict]:
+        dia_str = dia.strftime("%Y-%m-%d")
+        aulas = list(ags_por_dia.get(dia_str, []))
+        hrs = horarios_reais_por_dia.get(dia_str, set())
+        for r in recorrencias:
+            if r.dia_semana != dia.weekday():
+                continue
+            if (r.id, dia_str) in canceladas:
+                continue
+            if r.horario in hrs:
+                continue
+            hora, minuto = map(int, r.horario.split(":"))
+            aulas.append({
+                "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
+                "recorrente": True,
+            })
+        return sorted(aulas, key=lambda x: x["data_hora"])
+
+    semana_dias = [semana_inicio + timedelta(days=i) for i in range(7)]
+    proxima_semana_dias = [semana_inicio + timedelta(days=7 + i) for i in range(7)]
+
+    lista_semana: list[dict] = []
+    for d in semana_dias:
+        lista_semana.extend(aulas_do_dia(d))
+
+    lista_proxima_semana: list[dict] = []
+    for d in proxima_semana_dias:
+        lista_proxima_semana.extend(aulas_do_dia(d))
+
+    aulas_semana = len(lista_semana)
+    aulas_mes = sum(
+        len(aulas_do_dia(date(hoje.year, hoje.month, d)))
+        for d in range(1, dias_no_mes + 1)
+    )
+
+    # Valor projetado: aulas cobradas no mês × preço + taxa_mensal
+    aulas_cobradas = 0
+    for ag, slot in ags:
+        dia_str = slot.data_hora.strftime("%Y-%m-%d")
+        if mes_str_inicio <= dia_str <= mes_str_fim and not getattr(ag, "nao_cobrar", False):
+            aulas_cobradas += 1
+    for r in recorrencias:
+        for d in range(1, dias_no_mes + 1):
+            dia = date(hoje.year, hoje.month, d)
+            if dia.weekday() != r.dia_semana:
+                continue
+            dia_str = dia.strftime("%Y-%m-%d")
+            if (r.id, dia_str) in canceladas or (r.id, dia_str) in gratuitas:
+                continue
+            if r.horario in horarios_reais_por_dia.get(dia_str, set()):
+                continue
+            aulas_cobradas += 1
+
+    valor_projetado = round(aulas_cobradas * aluno.preco_por_aula + aluno.taxa_mensal, 2)
     valor_devido = round(fin.total if (fin and not fin.pago) else 0.0, 2)
     valor_pago = round(fin.total if (fin and fin.pago) else 0.0, 2)
 
