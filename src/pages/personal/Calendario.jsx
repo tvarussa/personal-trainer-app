@@ -369,6 +369,7 @@ export default function PersonalCalendario() {
   const [adicionando, setAdicionando] = useState(false)
   const [feedbackSlot, setFeedbackSlot] = useState(null)
   const [carregando, setCarregando] = useState(false)
+  const [slotsDia, setSlotsDia] = useState(null)
 
   const carregarSlots = useCallback(async () => {
     setCarregando(true)
@@ -412,12 +413,34 @@ export default function PersonalCalendario() {
     } catch {}
   }, [])
 
+  const carregarSlotsDia = useCallback(async (data) => {
+    setCarregando(true)
+    try {
+      const { data: lista } = await api.get('/slots/', { params: { data } })
+      setSlotsDia(lista)
+    } catch {}
+    finally {
+      setCarregando(false)
+    }
+  }, [])
+
   useEffect(() => {
     carregarSlots()
     carregarBloqueios()
     carregarRecorrencias()
     carregarAlunos()
   }, [carregarSlots, carregarBloqueios, carregarRecorrencias, carregarAlunos])
+
+  useEffect(() => {
+    if (!diaSelecionado) { setSlotsDia(null); return }
+    const hoje = new Date()
+    const hojeStr = dataStr(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+    if (diaSelecionado <= hojeStr) {
+      carregarSlotsDia(diaSelecionado)
+    } else {
+      setSlotsDia(null)
+    }
+  }, [diaSelecionado, carregarSlotsDia])
 
   const contadorAulas = useMemo(() => {
     const counts = {}
@@ -436,11 +459,18 @@ export default function PersonalCalendario() {
     marcadoresCombinados[k] = { ...(marcadoresCombinados[k] || {}), ...v }
   })
 
+  const hoje = new Date()
+  const hojeStr = dataStr(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+  const isPastDay = diaSelecionado !== null && diaSelecionado <= hojeStr
+
   const slotsDoDia = diaSelecionado
-    ? slots.filter((s) => {
-        const d = new Date(s.data_hora)
-        return dataStr(d.getFullYear(), d.getMonth(), d.getDate()) === diaSelecionado
-      }).sort((a, b) => new Date(a.data_hora) - new Date(b.data_hora))
+    ? (isPastDay
+        ? (slotsDia || [])
+        : slots.filter((s) => {
+            const d = new Date(s.data_hora)
+            return dataStr(d.getFullYear(), d.getMonth(), d.getDate()) === diaSelecionado
+          }).sort((a, b) => new Date(a.data_hora) - new Date(b.data_hora))
+      )
     : []
 
   const bloqueiosDoDia = diaSelecionado
@@ -453,6 +483,11 @@ export default function PersonalCalendario() {
         )
       })()
     : []
+
+  function refreshDia() {
+    if (isPastDay) return carregarSlotsDia(diaSelecionado)
+    return carregarSlots()
+  }
 
   async function adicionarSlot() {
     if (!diaSelecionado || !novaHora) return
@@ -468,7 +503,7 @@ export default function PersonalCalendario() {
       if (recorrente) {
         setFeedbackSlot(`${data.criados} slot(s) criado(s)${data.pulados ? `, ${data.pulados} pulado(s)` : ''}`)
       }
-      await carregarSlots()
+      await refreshDia()
     } catch (err) {
       alert(err.response?.data?.detail || 'Erro ao adicionar slot')
     } finally {
@@ -478,22 +513,22 @@ export default function PersonalCalendario() {
 
   async function bloquearSlot(id) {
     await api.patch(`/slots/${id}/bloquear`, { bloqueado: true })
-    carregarSlots()
+    refreshDia()
   }
 
   async function desbloquearSlot(id) {
     await api.patch(`/slots/${id}/bloquear`, { bloqueado: false })
-    carregarSlots()
+    refreshDia()
   }
 
   async function removerSlot(id) {
     await api.delete(`/slots/${id}`)
-    carregarSlots()
+    refreshDia()
   }
 
   async function agendar(slotId, alunoId) {
     await api.post('/agendamentos/', { slot_id: slotId, aluno_id: alunoId, tipo: 'avulso' })
-    carregarSlots()
+    refreshDia()
   }
 
   async function cancelarAula(slot) {
@@ -506,7 +541,7 @@ export default function PersonalCalendario() {
       } else {
         await api.post(`/agendamentos/${slot.agendamento_id}/cancelar`)
       }
-      carregarSlots()
+      refreshDia()
     } catch (err) {
       const detail = err.response?.data?.detail
       alert(typeof detail === 'string' ? detail : 'Erro ao cancelar aula')

@@ -21,9 +21,47 @@ class BloquearSlot(BaseModel):
 
 
 @router.get("/")
-def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
+def listar_slots(data: str | None = None, db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
     agora = agora_brasil()
     SEMANAS_FRENTE = 26
+
+    # Quando uma data específica é solicitada, retorna só os slots reais daquele dia (sem filtro de horário e sem recorrências virtuais)
+    if data:
+        try:
+            inicio = datetime.strptime(data, "%Y-%m-%d")
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD")
+        fim = inicio.replace(hour=23, minute=59, second=59)
+        slots_db = (
+            db.query(SlotDisponivel)
+            .filter(SlotDisponivel.data_hora >= inicio, SlotDisponivel.data_hora <= fim)
+            .order_by(SlotDisponivel.data_hora)
+            .all()
+        )
+        resultado = []
+        for s in slots_db:
+            hora_str = s.data_hora.strftime("%H:%M")
+            data_str_s = s.data_hora.strftime("%Y-%m-%d")
+            bloqueado = s.bloqueado_pelo_personal or horario_bloqueado(data_str_s, hora_str, db)
+            ag = s.agendamento
+            nome_aluno = None
+            agendamento_id = None
+            realizado = False
+            if ag and ag.status in (StatusAgendamento.confirmado, StatusAgendamento.realizado) and ag.aluno and ag.aluno.usuario:
+                nome_aluno = ag.aluno.usuario.nome
+                agendamento_id = ag.id
+                realizado = ag.status == StatusAgendamento.realizado
+            resultado.append({
+                "id": s.id,
+                "data_hora": s.data_hora,
+                "disponivel": s.disponivel and not bloqueado,
+                "bloqueado_pelo_personal": bloqueado,
+                "nome_aluno": nome_aluno,
+                "agendamento_id": agendamento_id,
+                "realizado": realizado,
+            })
+        return resultado
 
     # Identifica o aluno_id do usuário atual (se for aluno) para marcar suas próprias recorrências
     aluno_id_atual = None
