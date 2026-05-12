@@ -60,7 +60,7 @@ function BloqueioItem({ b }) {
   )
 }
 
-function SlotItem({ slot, onBloquear, onDesbloquear, onRemover }) {
+function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCancelar }) {
   const bloqueado = slot.bloqueado_pelo_personal
   const ocupado = !slot.disponivel && !bloqueado
   const virtual = !!slot.recorrencia
@@ -83,6 +83,16 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover }) {
         {!bloqueado && !ocupado && <p className="text-xs text-green-600 mt-0.5">Disponível</p>}
       </div>
       <div className="flex gap-2">
+        {ocupado && (
+          <button onClick={() => onCancelar(slot)} className="text-xs px-2 py-1 bg-white border border-red-100 rounded-lg text-red-500 hover:bg-red-50">
+            Cancelar
+          </button>
+        )}
+        {!ocupado && !virtual && !bloqueado && (
+          <button onClick={() => onAgendar(slot)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            Agendar
+          </button>
+        )}
         {!ocupado && !virtual && (
           bloqueado ? (
             <button onClick={() => onDesbloquear(slot.id)} className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
@@ -99,6 +109,76 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover }) {
             ✕
           </button>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ModalAgendar({ slot, alunos, onConfirmar, onFechar }) {
+  const [busca, setBusca] = useState('')
+  const [agendando, setAgendando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  const filtrados = alunos.filter(a =>
+    a.ativo && a.nome.toLowerCase().includes(busca.toLowerCase())
+  )
+
+  async function confirmar(aluno) {
+    setAgendando(true)
+    setErro('')
+    try {
+      await onConfirmar(slot.id, aluno.id)
+      onFechar()
+    } catch (err) {
+      setErro(err.response?.data?.detail || 'Erro ao agendar')
+      setAgendando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end" onClick={onFechar}>
+      <div
+        className="bg-white w-full max-w-md mx-auto rounded-t-2xl max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div>
+            <h2 className="font-semibold text-gray-800">Agendar aula</h2>
+            <p className="text-xs text-gray-400">{formatHora(slot.data_hora)}</p>
+          </div>
+          <button onClick={onFechar} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+        <div className="p-4 flex flex-col gap-3 overflow-y-auto">
+          <input
+            type="search"
+            placeholder="Buscar aluno..."
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            autoFocus
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {erro && <p className="text-sm text-red-500">{erro}</p>}
+          {filtrados.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Nenhum aluno encontrado</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filtrados.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => confirmar(a)}
+                  disabled={agendando}
+                  className="flex items-center justify-between bg-gray-50 rounded-xl p-3 border border-gray-100 text-left hover:bg-blue-50 hover:border-blue-100 transition-colors disabled:opacity-50"
+                >
+                  <div>
+                    <p className="font-medium text-gray-800 text-sm">{a.nome}</p>
+                    {a.academia_nome && <p className="text-xs text-blue-500 mt-0.5">{a.academia_nome}</p>}
+                  </div>
+                  <span className="text-xs text-blue-600 font-medium">Agendar →</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -275,6 +355,8 @@ export default function PersonalCalendario() {
   const [slots, setSlots] = useState([])
   const [bloqueios, setBloqueios] = useState([])
   const [recorrencias, setRecorrencias] = useState([])
+  const [alunos, setAlunos] = useState([])
+  const [agendandoSlot, setAgendandoSlot] = useState(null)
   const [marcadores, setMarcadores] = useState({})
   const [marcadoresBloqueios, setMarcadoresBloqueios] = useState({})
   const [diaSelecionado, setDiaSelecionado] = useState(null)
@@ -320,11 +402,19 @@ export default function PersonalCalendario() {
     } catch {}
   }, [])
 
+  const carregarAlunos = useCallback(async () => {
+    try {
+      const { data } = await api.get('/alunos/')
+      setAlunos(data)
+    } catch {}
+  }, [])
+
   useEffect(() => {
     carregarSlots()
     carregarBloqueios()
     carregarRecorrencias()
-  }, [carregarSlots, carregarBloqueios, carregarRecorrencias])
+    carregarAlunos()
+  }, [carregarSlots, carregarBloqueios, carregarRecorrencias, carregarAlunos])
 
   const contadorAulas = useMemo(() => {
     const counts = {}
@@ -421,6 +511,28 @@ export default function PersonalCalendario() {
   async function removerSlot(id) {
     await api.delete(`/slots/${id}`)
     carregarSlots()
+  }
+
+  async function agendar(slotId, alunoId) {
+    await api.post('/agendamentos/', { slot_id: slotId, aluno_id: alunoId, tipo: 'avulso' })
+    carregarSlots()
+  }
+
+  async function cancelarAula(slot) {
+    const nome = slot.nome_aluno ? ` de ${slot.nome_aluno}` : ''
+    if (!window.confirm(`Cancelar a aula${nome} em ${formatHora(slot.data_hora)}?`)) return
+    try {
+      if (slot.recorrencia) {
+        const data = new Date(slot.data_hora).toISOString().slice(0, 10)
+        await api.post(`/recorrencias/${slot.recorrencia_id}/cancelar-ocorrencia`, { data })
+      } else {
+        await api.post(`/agendamentos/${slot.agendamento_id}/cancelar`)
+      }
+      carregarSlots()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      alert(typeof detail === 'string' ? detail : 'Erro ao cancelar aula')
+    }
   }
 
   function atualizarBloqueios() {
@@ -523,6 +635,8 @@ export default function PersonalCalendario() {
                   onBloquear={bloquearSlot}
                   onDesbloquear={desbloquearSlot}
                   onRemover={removerSlot}
+                  onAgendar={setAgendandoSlot}
+                  onCancelar={cancelarAula}
                 />
               ))}
             </div>
@@ -535,6 +649,15 @@ export default function PersonalCalendario() {
       )}
 
       <SecaoBloqueios bloqueios={bloqueios} onAtualizar={atualizarBloqueios} />
+
+      {agendandoSlot && (
+        <ModalAgendar
+          slot={agendandoSlot}
+          alunos={alunos}
+          onConfirmar={agendar}
+          onFechar={() => setAgendandoSlot(null)}
+        />
+      )}
     </div>
   )
 }
