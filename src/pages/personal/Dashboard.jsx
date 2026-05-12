@@ -103,6 +103,14 @@ export default function PersonalDashboard() {
           <p className="text-xs text-green-600 font-medium">Alunos ativos</p>
           <p className="text-2xl font-bold text-green-800 mt-1">{dados?.alunos_ativos ?? '—'}</p>
         </div>
+        <div className="bg-sky-50 rounded-xl p-4">
+          <p className="text-xs text-sky-600 font-medium">Aulas na semana</p>
+          <p className="text-2xl font-bold text-sky-800 mt-1">{dados?.aulas_semana ?? '—'}</p>
+        </div>
+        <div className="bg-indigo-50 rounded-xl p-4">
+          <p className="text-xs text-indigo-600 font-medium">Aulas no mês</p>
+          <p className="text-2xl font-bold text-indigo-800 mt-1">{dados?.aulas_mes ?? '—'}</p>
+        </div>
         <div className="bg-purple-50 rounded-xl p-4">
           <p className="text-xs text-purple-600 font-medium">Receita realizada</p>
           <p className="text-lg font-bold text-purple-800 mt-1">{dados ? fmt(dados.receita_realizada) : '—'}</p>

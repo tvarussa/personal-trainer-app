@@ -80,6 +80,14 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
     lista_hoje = _aulas_do_dia(hoje, db)
     aulas_hoje = len(lista_hoje)
 
+    # Aulas na semana (segunda a domingo da semana atual)
+    semana_inicio = hoje - timedelta(days=hoje.weekday())
+    aulas_semana = sum(len(_aulas_do_dia(semana_inicio + timedelta(days=i), db)) for i in range(7))
+
+    # Aulas no mês (todos os dias do mês corrente)
+    dias_no_mes = monthrange(hoje.year, hoje.month)[1]
+    aulas_mes = sum(len(_aulas_do_dia(date(hoje.year, hoje.month, d), db)) for d in range(1, dias_no_mes + 1))
+
     proximo_dia: dict | None = None
     for i in range(1, 31):
         d = hoje + timedelta(days=i)
@@ -157,6 +165,8 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
 
     return {
         "aulas_hoje": aulas_hoje,
+        "aulas_semana": aulas_semana,
+        "aulas_mes": aulas_mes,
         "alunos_ativos": alunos_ativos,
         "receita_realizada": receita_realizada,
         "receita_projetada": receita_projetada,
