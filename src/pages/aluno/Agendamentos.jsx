@@ -85,17 +85,21 @@ export default function AlunoAgendamentos() {
         } else if (s.disponivel) {
           m[chave].disponivel = true
         } else {
-          // Ocupado: agendamento real ou recorrência de qualquer aluno
           m[chave].ocupado = true
+        }
+
+        if (s.minha_recorrencia) {
+          m[chave].minha_aula = true
         }
       })
 
-      // Agendamentos confirmados reais (podem já estar cobertos pelos slots, mas garante)
+      // Agendamentos confirmados reais
       confirmados.forEach(a => {
         const d = new Date(a.data_hora)
         const chave = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
         if (!m[chave]) m[chave] = {}
         m[chave].ocupado = true
+        m[chave].minha_aula = true
       })
 
       setMarcadores(m)
@@ -282,6 +286,7 @@ export default function AlunoAgendamentos() {
       {/* Calendário */}
       <CalendarioBase
         marcadores={marcadoresCombinados}
+        modeAluno={true}
         diaSelecionado={diaSelecionado}
         onDiaSelecionado={setDiaSelecionado}
       />

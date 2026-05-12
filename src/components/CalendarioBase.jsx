@@ -22,7 +22,7 @@ export function dataStr(ano, mes, dia) {
   return `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
 }
 
-export default function CalendarioBase({ marcadores = {}, contadorAulas = {}, onDiaSelecionado, diaSelecionado }) {
+export default function CalendarioBase({ marcadores = {}, contadorAulas = {}, modeAluno = false, onDiaSelecionado, diaSelecionado }) {
   const hoje = new Date()
   const [ano, setAno] = useState(hoje.getFullYear())
   const [mes, setMes] = useState(hoje.getMonth())
@@ -84,12 +84,15 @@ export default function CalendarioBase({ marcadores = {}, contadorAulas = {}, on
               `}
             >
               {dia}
-              {(aulaCount > 0 || marcador.disponivel || marcador.bloqueado) && (
+              {(aulaCount > 0 || marcador.minha_aula || marcador.disponivel || marcador.bloqueado) && (
                 <div className="absolute bottom-0.5 flex items-center gap-0.5">
                   {aulaCount > 0 && (
                     <span className={`text-[9px] leading-none font-bold ${selecionado ? 'text-blue-100' : 'text-blue-500'}`}>
                       {aulaCount}
                     </span>
+                  )}
+                  {marcador.minha_aula && (
+                    <span className={`w-1 h-1 rounded-full ${selecionado ? 'bg-white' : 'bg-indigo-500'}`} />
                   )}
                   {marcador.disponivel && (
                     <span className={`w-1 h-1 rounded-full ${selecionado ? 'bg-white' : 'bg-green-500'}`} />
@@ -106,9 +109,19 @@ export default function CalendarioBase({ marcadores = {}, contadorAulas = {}, on
 
       {/* Legenda */}
       <div className="flex gap-4 px-4 pb-3 justify-center text-xs text-gray-400">
-        <span className="flex items-center gap-1"><span className="text-[10px] font-bold text-blue-500">3</span>Aulas</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>Disponível</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Bloqueado</span>
+        {modeAluno ? (
+          <>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block"/>Minha aula</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>Disponível</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Indisponível</span>
+          </>
+        ) : (
+          <>
+            <span className="flex items-center gap-1"><span className="text-[10px] font-bold text-blue-500">3</span>Aulas</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>Disponível</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Bloqueado</span>
+          </>
+        )}
       </div>
     </div>
   )
