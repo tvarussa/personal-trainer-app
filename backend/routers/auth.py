@@ -81,9 +81,11 @@ def require_aluno(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario:
 
 @router.post("/token", response_model=TokenResponse)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.email == form.username, Usuario.ativo == True).first()
+    usuario = db.query(Usuario).filter(Usuario.email == form.username).first()
     if not usuario or not verificar_senha(form.password, usuario.senha_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou senha incorretos")
+    if not usuario.ativo:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
 
     token = criar_token({"sub": str(usuario.id)})
     return {"access_token": token, "token_type": "bearer", "user": usuario}

@@ -31,6 +31,8 @@ export default function Login() {
     } catch (err) {
       if (!err.response) {
         setErro('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
+      } else if (err.response.status === 403) {
+        setErro('Sua conta está inativa. Entre em contato com seu Personal Trainer para reativá-la.')
       } else {
         setErro('Email ou senha incorretos. Verifique seus dados e tente novamente.')
       }
