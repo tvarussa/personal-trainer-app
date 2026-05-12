@@ -141,6 +141,34 @@ def cancelar_ocorrencia(
     return {"ok": True}
 
 
+@router.delete("/{recorrencia_id}/cancelar-ocorrencia")
+def restaurar_ocorrencia(
+    recorrencia_id: int,
+    data: str,
+    db: Session = Depends(get_db),
+    usuario=Depends(get_usuario_atual),
+):
+    rec = db.query(Recorrencia).filter(Recorrencia.id == recorrencia_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recorrência não encontrada")
+
+    if usuario.perfil == "aluno":
+        al = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
+        if not al or rec.aluno_id != al.id:
+            raise HTTPException(status_code=403, detail="Sem permissão")
+
+    existente = db.query(OcorrenciaCancelada).filter(
+        OcorrenciaCancelada.recorrencia_id == recorrencia_id,
+        OcorrenciaCancelada.data == data,
+    ).first()
+    if not existente:
+        raise HTTPException(status_code=404, detail="Cancelamento não encontrado")
+
+    db.delete(existente)
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{recorrencia_id}")
 def remover_recorrencia(recorrencia_id: int, db: Session = Depends(get_db), _=Depends(require_personal)):
     r = db.query(Recorrencia).filter(Recorrencia.id == recorrencia_id).first()

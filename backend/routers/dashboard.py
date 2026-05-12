@@ -323,6 +323,9 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
             "cobrar": not getattr(ag, "nao_cobrar", False) and not is_cancelado,
             "realizado": ag.status == StatusAgendamento.realizado,
             "cancelado": is_cancelado,
+            "agendamento_id": ag.id,
+            "recorrencia_id": None,
+            "data": dia_str,
         })
 
     def aulas_do_dia(dia: date) -> list[dict]:
@@ -342,6 +345,9 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
                 "cobrar": not is_cancelado and (r.id, dia_str) not in gratuitas,
                 "realizado": False,
                 "cancelado": is_cancelado,
+                "agendamento_id": None,
+                "recorrencia_id": r.id,
+                "data": dia_str,
             })
         return sorted(aulas, key=lambda x: x["data_hora"])
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../services/api'
 
@@ -15,33 +15,66 @@ function fmtHora(dt) {
   return new Date(dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
-function ListaAulas({ aulas, vazia }) {
+function ListaAulas({ aulas, vazia, onToggle }) {
+  const [carregando, setCarregando] = useState(null)
+
   if (!aulas || aulas.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-3">{vazia}</p>
   }
+
+  async function handleToggle(a) {
+    if (!a.cancelado && !window.confirm('Confirma o cancelamento desta aula?')) return
+    const chave = a.data_hora + (a.agendamento_id ?? a.recorrencia_id)
+    setCarregando(chave)
+    try {
+      await onToggle(a)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Erro ao processar solicitação')
+    } finally {
+      setCarregando(null)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      {aulas.map((a, i) => (
-        <div key={i} className={`flex items-center gap-2 ${a.cancelado ? 'opacity-50' : ''}`}>
-          <span className="text-sm text-gray-500 w-28 shrink-0">{fmtDia(a.data_hora)}</span>
-          <span className={`text-sm font-semibold ${a.cancelado ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{fmtHora(a.data_hora)}</span>
-          <div className="flex gap-1 flex-wrap">
-            {a.recorrente && (
-              <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full">Rec</span>
-            )}
-            {a.cancelado ? (
-              <span className="text-xs bg-gray-100 text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded-full">Cancelada</span>
-            ) : a.realizado ? (
-              <span className="text-xs bg-green-50 text-green-600 border border-green-100 px-1.5 py-0.5 rounded-full">Realizada</span>
-            ) : null}
-            {!a.cancelado && (
-              a.cobrar
-                ? <span className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full">Cobrada</span>
-                : <span className="text-xs bg-orange-50 text-orange-500 border border-orange-100 px-1.5 py-0.5 rounded-full">Não cobrada</span>
+      {aulas.map((a, i) => {
+        const chave = a.data_hora + (a.agendamento_id ?? a.recorrencia_id)
+        const ocupado = carregando === chave
+        return (
+          <div key={i} className={`flex items-center gap-2 ${a.cancelado ? 'opacity-50' : ''}`}>
+            <span className="text-sm text-gray-500 w-28 shrink-0">{fmtDia(a.data_hora)}</span>
+            <span className={`text-sm font-semibold ${a.cancelado ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{fmtHora(a.data_hora)}</span>
+            <div className="flex gap-1 flex-wrap flex-1">
+              {a.recorrente && (
+                <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full">Rec</span>
+              )}
+              {a.cancelado ? (
+                <span className="text-xs bg-gray-100 text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded-full">Cancelada</span>
+              ) : a.realizado ? (
+                <span className="text-xs bg-green-50 text-green-600 border border-green-100 px-1.5 py-0.5 rounded-full">Realizada</span>
+              ) : null}
+              {!a.cancelado && (
+                a.cobrar
+                  ? <span className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full">Cobrada</span>
+                  : <span className="text-xs bg-orange-50 text-orange-500 border border-orange-100 px-1.5 py-0.5 rounded-full">Não cobrada</span>
+              )}
+            </div>
+            {!a.realizado && (
+              <button
+                onClick={() => handleToggle(a)}
+                disabled={ocupado}
+                className={`text-xs shrink-0 px-2 py-1 rounded-lg border transition-colors disabled:opacity-40 ${
+                  a.cancelado
+                    ? 'text-blue-600 border-blue-100 bg-blue-50 hover:bg-blue-100'
+                    : 'text-red-500 border-red-100 bg-red-50 hover:bg-red-100'
+                }`}
+              >
+                {ocupado ? '...' : a.cancelado ? 'Desfazer' : 'Cancelar'}
+              </button>
             )}
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -50,11 +83,30 @@ export default function AlunoDashboard() {
   const { user } = useAuth()
   const [dados, setDados] = useState(null)
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
     api.get('/dashboard/aluno')
       .then(r => setDados(r.data))
       .catch(err => setDados({ _erro: String(err), _status: err?.response?.status }))
   }, [])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function toggleCancelamento(aula) {
+    if (aula.cancelado) {
+      if (aula.agendamento_id) {
+        await api.post(`/agendamentos/${aula.agendamento_id}/restaurar`)
+      } else {
+        await api.delete(`/recorrencias/${aula.recorrencia_id}/cancelar-ocorrencia`, { params: { data: aula.data } })
+      }
+    } else {
+      if (aula.agendamento_id) {
+        await api.post(`/agendamentos/${aula.agendamento_id}/cancelar`)
+      } else {
+        await api.post(`/recorrencias/${aula.recorrencia_id}/cancelar-ocorrencia`, { data: aula.data })
+      }
+    }
+    carregar()
+  }
 
   return (
     <div className="px-4 py-6 flex flex-col gap-4">
@@ -93,12 +145,12 @@ export default function AlunoDashboard() {
 
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Aulas desta semana</h2>
-        <ListaAulas aulas={dados?.lista_semana} vazia="Nenhuma aula esta semana" />
+        <ListaAulas aulas={dados?.lista_semana} vazia="Nenhuma aula esta semana" onToggle={toggleCancelamento} />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Aulas da próxima semana</h2>
-        <ListaAulas aulas={dados?.lista_proxima_semana} vazia="Nenhuma aula na próxima semana" />
+        <ListaAulas aulas={dados?.lista_proxima_semana} vazia="Nenhuma aula na próxima semana" onToggle={toggleCancelamento} />
       </div>
     </div>
   )

@@ -141,3 +141,24 @@ def cancelar_agendamento(agendamento_id: int, db: Session = Depends(get_db), usu
         "cobrado": not agendamento.cancelado_com_antecedencia,
         "aviso": None if agendamento.cancelado_com_antecedencia else "Cancelamento com menos de 24h — aula será cobrada",
     }
+
+
+@router.post("/{agendamento_id}/restaurar")
+def restaurar_agendamento(agendamento_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(get_usuario_atual)):
+    agendamento = db.query(Agendamento).filter(Agendamento.id == agendamento_id).first()
+    if not agendamento:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+
+    if usuario.perfil == "aluno":
+        aluno = db.query(Aluno).filter(Aluno.usuario_id == usuario.id).first()
+        if not aluno or agendamento.aluno_id != aluno.id:
+            raise HTTPException(status_code=403, detail="Sem permissão")
+
+    if agendamento.status != StatusAgendamento.cancelado:
+        raise HTTPException(status_code=400, detail="Agendamento não está cancelado")
+
+    agendamento.status = StatusAgendamento.confirmado
+    agendamento.cancelado_com_antecedencia = False
+    agendamento.slot.disponivel = False
+    db.commit()
+    return {"ok": True}
