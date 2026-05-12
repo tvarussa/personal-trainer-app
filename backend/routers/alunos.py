@@ -20,6 +20,7 @@ class CriarAluno(BaseModel):
 
 class AtualizarAluno(BaseModel):
     nome: str | None = None
+    email: EmailStr | None = None
     telefone: str | None = None
     preco_por_aula: float | None = None
     taxa_mensal: float | None = None
@@ -100,6 +101,10 @@ def atualizar_aluno(aluno_id: int, dados: AtualizarAluno, db: Session = Depends(
 
     if dados.nome:
         aluno.usuario.nome = dados.nome
+    if dados.email and dados.email != aluno.usuario.email:
+        if db.query(Usuario).filter(Usuario.email == dados.email, Usuario.id != aluno.usuario_id).first():
+            raise HTTPException(status_code=400, detail="Email já cadastrado")
+        aluno.usuario.email = dados.email
     if dados.telefone is not None:
         aluno.usuario.telefone = dados.telefone
     if dados.preco_por_aula is not None:

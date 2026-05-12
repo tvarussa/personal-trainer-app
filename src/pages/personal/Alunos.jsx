@@ -65,7 +65,7 @@ function FormAluno({ inicial, academias, onSalvar, onFechar }) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       {[
         { label: 'Nome', campo: 'nome', type: 'text', required: true },
-        ...(!editando ? [{ label: 'Email', campo: 'email', type: 'email', required: true }] : []),
+        { label: 'Email', campo: 'email', type: 'email', required: true },
         { label: 'Telefone', campo: 'telefone', type: 'tel' },
         ...(!editando ? [{ label: 'Senha inicial', campo: 'senha', type: 'password', required: true }] : []),
       ].map(({ label, campo, type, required }) => (
@@ -429,7 +429,7 @@ function PainelAluno({ aluno, academias, onFechar }) {
 
       {aba === 'dados' && (
         <FormAluno
-          inicial={{ id: aluno.id, nome: aluno.nome, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '', academia_id: aluno.academia_id || '', ativo: aluno.ativo }}
+          inicial={{ id: aluno.id, nome: aluno.nome, email: aluno.email, telefone: aluno.telefone || '', preco_por_aula: aluno.preco_por_aula, taxa_mensal: aluno.taxa_mensal, observacoes: aluno.observacoes || '', academia_id: aluno.academia_id || '', ativo: aluno.ativo }}
           academias={academias}
           onSalvar={salvarDados}
           onFechar={() => onFechar(false)}
