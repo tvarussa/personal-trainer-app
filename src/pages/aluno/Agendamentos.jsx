@@ -66,7 +66,7 @@ export default function AlunoAgendamentos() {
         api.get('/bloqueios/'),
       ])
 
-      const confirmados = agData.filter(a => a.status === 'confirmado')
+      const confirmados = agData.filter(a => ['confirmado', 'cancelado'].includes(a.status))
       setSlots(slotsData)
       setAgendamentos(confirmados)
       setBloqueios(bloqueiosData)
@@ -93,12 +93,12 @@ export default function AlunoAgendamentos() {
         }
       })
 
-      // Agendamentos confirmados reais
+      // Agendamentos reais (confirmados e cancelados)
       confirmados.forEach(a => {
         const d = new Date(a.data_hora)
         const chave = dataStr(d.getFullYear(), d.getMonth(), d.getDate())
         if (!m[chave]) m[chave] = {}
-        m[chave].ocupado = true
+        if (a.status === 'confirmado') m[chave].ocupado = true
         m[chave].minha_aula = true
       })
 
@@ -159,7 +159,7 @@ export default function AlunoAgendamentos() {
 
   const diaTodoBloqueado = bloqueiosDoDia.some(b => b.dia_todo)
 
-  // "Próximas aulas": agendamentos reais + minhas recorrências futuras
+  // "Próximas aulas": agendamentos reais (confirmados + cancelados) + minhas recorrências futuras
   const agora = new Date()
   const proximasReais = agendamentos
     .filter(a => new Date(a.data_hora) > agora)
@@ -220,7 +220,8 @@ export default function AlunoAgendamentos() {
     }
   }
 
-  const nenhumDoDia = !diaTodoBloqueado && slotsDisponiveisDoDia.length === 0 && minhasRecDoDia.length === 0 && agDoDia.length === 0
+  const agConfirmadosDoDia = agDoDia.filter(a => a.status === 'confirmado')
+  const nenhumDoDia = !diaTodoBloqueado && slotsDisponiveisDoDia.length === 0 && minhasRecDoDia.length === 0 && agConfirmadosDoDia.length === 0
 
   return (
     <div className="px-4 py-6 flex flex-col gap-4">
@@ -246,19 +247,23 @@ export default function AlunoAgendamentos() {
               const horas = horasAte(a.data_hora)
               const d = new Date(a.data_hora)
               const cancelKey = a._virtual ? `${a.recorrencia_id}${dataStr(d.getFullYear(), d.getMonth(), d.getDate())}` : null
+              const cancelada = a.status === 'cancelado'
               return (
-                <div key={a.id} className="bg-blue-50 rounded-xl border border-blue-100 p-3 flex items-center justify-between">
+                <div key={a.id} className={`rounded-xl border p-3 flex items-center justify-between ${cancelada ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-100'}`}>
                   <div>
-                    <p className="font-semibold text-blue-800 text-sm">{formatDataCurta(a.data_hora)}</p>
-                    <p className="text-xs text-blue-600">{formatHora(a.data_hora)}</p>
-                    {a._virtual && (
+                    <p className={`font-semibold text-sm ${cancelada ? 'text-gray-400 line-through' : 'text-blue-800'}`}>{formatDataCurta(a.data_hora)}</p>
+                    <p className={`text-xs ${cancelada ? 'text-gray-400' : 'text-blue-600'}`}>{formatHora(a.data_hora)}</p>
+                    {a._virtual && !cancelada && (
                       <p className="text-xs text-blue-400 mt-0.5">Recorrente</p>
                     )}
-                    {!a._virtual && horas < ANTECEDENCIA_HORAS && horas > 0 && (
+                    {!cancelada && !a._virtual && horas < ANTECEDENCIA_HORAS && horas > 0 && (
                       <p className="text-xs text-orange-500 mt-0.5">⚠️ Cancelamento tardio — será cobrado</p>
                     )}
                   </div>
-                  {!a._virtual && horas > 0 && (
+                  {cancelada && (
+                    <span className="text-xs px-2 py-1 bg-red-50 text-red-400 border border-red-100 rounded-lg shrink-0">Cancelada</span>
+                  )}
+                  {!cancelada && !a._virtual && horas > 0 && (
                     <button
                       onClick={() => cancelar(a.id, a.data_hora)}
                       disabled={cancelando === a.id}
@@ -267,7 +272,7 @@ export default function AlunoAgendamentos() {
                       {cancelando === a.id ? '...' : 'Cancelar'}
                     </button>
                   )}
-                  {a._virtual && horas > 0 && (
+                  {!cancelada && a._virtual && horas > 0 && (
                     <button
                       onClick={() => cancelarOcorrencia(a.recorrencia_id, a.data_hora)}
                       disabled={cancelandoRec === cancelKey}
@@ -308,12 +313,29 @@ export default function AlunoAgendamentos() {
             </div>
           ))}
 
-          {/* Agendamentos reais já confirmados no dia */}
-          {agDoDia.length > 0 && (
-            <div className="bg-blue-50 rounded-xl border border-blue-100 p-3 text-sm text-blue-700">
-              Você já tem {agDoDia.length} aula(s) agendada(s) neste dia.
-            </div>
-          )}
+          {/* Agendamentos reais do dia (confirmados e cancelados) */}
+          {agDoDia.map(a => {
+            const cancelada = a.status === 'cancelado'
+            return (
+              <div key={a.id} className={`flex items-center justify-between rounded-xl border p-3 ${cancelada ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-100'}`}>
+                <div>
+                  <p className={`font-semibold text-sm ${cancelada ? 'text-gray-400' : 'text-blue-800'}`}>{formatHora(a.data_hora)}</p>
+                  <p className={`text-xs mt-0.5 ${cancelada ? 'text-red-400' : 'text-blue-500'}`}>{cancelada ? 'Cancelada' : 'Agendada'}</p>
+                </div>
+                {cancelada ? (
+                  <span className="text-xs px-2 py-1 bg-red-50 text-red-400 border border-red-100 rounded-lg">Cancelada</span>
+                ) : (
+                  <button
+                    onClick={() => cancelar(a.id, a.data_hora)}
+                    disabled={cancelando === a.id}
+                    className="text-xs px-3 py-1.5 bg-white border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {cancelando === a.id ? '...' : 'Cancelar'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
 
           {carregando ? (
             <div className="text-center text-gray-400 text-sm py-4">Carregando...</div>
