@@ -29,7 +29,9 @@ function ListaAulas({ aulas, vazia, onToggle }) {
     try {
       await onToggle(a)
     } catch (err) {
-      alert(err.response?.data?.detail || 'Erro ao processar solicitação')
+      const detail = err.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : 'Erro ao processar solicitação. Tente novamente.'
+      alert(msg)
     } finally {
       setCarregando(null)
     }
@@ -59,7 +61,7 @@ function ListaAulas({ aulas, vazia, onToggle }) {
                   : <span className="text-xs bg-orange-50 text-orange-500 border border-orange-100 px-1.5 py-0.5 rounded-full">Não cobrada</span>
               )}
             </div>
-            {!a.realizado && (
+            {!a.realizado && (a.cancelado || new Date(a.data_hora) > new Date()) && (
               <button
                 onClick={() => handleToggle(a)}
                 disabled={ocupado}
