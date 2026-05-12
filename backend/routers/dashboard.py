@@ -363,10 +363,9 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
         lista_proxima_semana.extend(aulas_do_dia(d))
 
     aulas_semana = sum(1 for a in lista_semana if not a["cancelado"])
-    aulas_mes = sum(
-        sum(1 for a in aulas_do_dia(date(hoje.year, hoje.month, d)) if not a["cancelado"])
-        for d in range(1, dias_no_mes + 1)
-    )
+    aulas_mes_por_dia = [aulas_do_dia(date(hoje.year, hoje.month, d)) for d in range(1, dias_no_mes + 1)]
+    aulas_mes = sum(sum(1 for a in dia if not a["cancelado"]) for dia in aulas_mes_por_dia)
+    aulas_canceladas_mes = sum(sum(1 for a in dia if a["cancelado"]) for dia in aulas_mes_por_dia)
 
     # Valor projetado: aulas cobradas no mês × preço + taxa_mensal
     aulas_cobradas = 0
@@ -395,6 +394,7 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
     return {
         "aulas_semana": aulas_semana,
         "aulas_mes": aulas_mes,
+        "aulas_canceladas_mes": aulas_canceladas_mes,
         "lista_semana": lista_semana,
         "lista_proxima_semana": lista_proxima_semana,
         "valor_projetado": valor_projetado,

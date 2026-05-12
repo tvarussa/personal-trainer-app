@@ -119,14 +119,18 @@ export default function AlunoDashboard() {
         <p className="text-sm text-gray-500">Bem-vindo ao seu painel</p>
       </div>
 
-<div className="grid grid-cols-2 gap-3">
-        <div className="bg-blue-50 rounded-xl p-4">
-          <p className="text-xs text-blue-600 font-medium">Aulas esta semana</p>
+<div className="grid grid-cols-3 gap-3">
+        <div className="bg-blue-50 rounded-xl p-3">
+          <p className="text-xs text-blue-600 font-medium leading-tight">Aulas na semana</p>
           <p className="text-2xl font-bold text-blue-800 mt-1">{dados?.aulas_semana ?? '—'}</p>
         </div>
-        <div className="bg-green-50 rounded-xl p-4">
-          <p className="text-xs text-green-600 font-medium">Aulas este mês</p>
+        <div className="bg-green-50 rounded-xl p-3">
+          <p className="text-xs text-green-600 font-medium leading-tight">Aulas no mês</p>
           <p className="text-2xl font-bold text-green-800 mt-1">{dados?.aulas_mes ?? '—'}</p>
+        </div>
+        <div className="bg-red-50 rounded-xl p-3">
+          <p className="text-xs text-red-500 font-medium leading-tight">Canceladas no mês</p>
+          <p className="text-2xl font-bold text-red-700 mt-1">{dados?.aulas_canceladas_mes ?? '—'}</p>
         </div>
       </div>
 
