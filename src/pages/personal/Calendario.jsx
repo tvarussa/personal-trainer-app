@@ -83,7 +83,7 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
         {!bloqueado && !ocupado && <p className="text-xs text-green-600 mt-0.5">Disponível</p>}
       </div>
       <div className="flex gap-2">
-        {ocupado && (
+        {(slot.agendamento_id || slot.recorrencia) && ocupado && (
           <button onClick={() => onCancelar(slot)} className="text-xs px-2 py-1 bg-white border border-red-100 rounded-lg text-red-500 hover:bg-red-50">
             Cancelar
           </button>
@@ -106,7 +106,7 @@ function SlotItem({ slot, onBloquear, onDesbloquear, onRemover, onAgendar, onCan
         )}
         {!ocupado && !virtual && (
           <button onClick={() => onRemover(slot.id)} className="text-xs px-2 py-1 bg-white border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-50">
-            ✕
+            Excluir
           </button>
         )}
       </div>
