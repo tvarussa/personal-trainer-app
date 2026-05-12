@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from database import get_db, Agendamento, SlotDisponivel, Aluno, Usuario, StatusAgendamento, TipoAgendamento
+from utils import agora_brasil
 from routers.auth import get_usuario_atual, require_personal
 from services.notificacoes import notificar_personal
 
@@ -121,7 +122,7 @@ def cancelar_agendamento(agendamento_id: int, db: Session = Depends(get_db), usu
     if agendamento.status != StatusAgendamento.confirmado:
         raise HTTPException(status_code=400, detail="Agendamento não pode ser cancelado")
 
-    horas_restantes = (agendamento.slot.data_hora - datetime.utcnow()).total_seconds() / 3600
+    horas_restantes = (agendamento.slot.data_hora - agora_brasil()).total_seconds() / 3600
     agendamento.cancelado_com_antecedencia = horas_restantes >= ANTECEDENCIA_MINIMA_HORAS
     agendamento.status = StatusAgendamento.cancelado
     agendamento.slot.disponivel = True

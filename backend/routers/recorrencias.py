@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from database import get_db, Recorrencia, Aluno, FrequenciaRecorrencia, OcorrenciaCancelada
 from routers.auth import require_personal, get_usuario_atual
+from utils import agora_brasil
 
 router = APIRouter(prefix="/recorrencias", tags=["recorrencias"])
 
@@ -123,7 +124,7 @@ def cancelar_ocorrencia(
     try:
         hora, minuto = map(int, rec.horario.split(":"))
         dt_ocorrencia = datetime.strptime(dados.data, "%Y-%m-%d").replace(hour=hora, minute=minuto)
-        if dt_ocorrencia < datetime.utcnow():
+        if dt_ocorrencia < agora_brasil():
             raise HTTPException(status_code=400, detail="Não é possível cancelar uma aula já passada")
     except ValueError:
         raise HTTPException(status_code=400, detail="Data inválida")

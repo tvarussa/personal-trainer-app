@@ -5,6 +5,7 @@ from datetime import datetime, date
 from calendar import monthrange
 from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, Usuario, StatusAgendamento
 from routers.auth import require_personal, get_usuario_atual
+from utils import agora_brasil
 
 router = APIRouter(prefix="/financeiro", tags=["financeiro"])
 
@@ -42,7 +43,7 @@ def listar_financeiro(mes: str | None = None, db: Session = Depends(get_db), _=D
 @router.get("/resumo")
 def resumo_financeiro(mes: str | None = None, db: Session = Depends(get_db), _=Depends(require_personal)):
     if not mes:
-        mes = datetime.now().strftime("%Y-%m")
+        mes = agora_brasil().strftime("%Y-%m")
     registros = db.query(Financeiro).filter(Financeiro.mes_referencia == mes).all()
     total_geral = sum(r.total for r in registros)
     total_pago = sum(r.total for r in registros if r.pago)
@@ -142,7 +143,7 @@ def fechar_mes(mes: str, db: Session = Depends(get_db), _=Depends(require_person
 @router.get("/projecao")
 def projecao(meses: int = 3, db: Session = Depends(get_db), _=Depends(require_personal)):
     """Estima receita futura com base nas recorrências ativas e preços atuais."""
-    hoje = datetime.now()
+    hoje = agora_brasil()
     alunos = db.query(Aluno).join(Aluno.usuario).filter(Aluno.usuario.has(ativo=True)).all()
     recorrencias = db.query(Recorrencia).filter(Recorrencia.ativo == True).all()
 

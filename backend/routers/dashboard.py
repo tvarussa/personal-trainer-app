@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from calendar import monthrange
 from database import get_db, Agendamento, Aluno, Usuario, Financeiro, SlotDisponivel, StatusAgendamento, TipoAgendamento, OcorrenciaCancelada, OcorrenciaGratuita, Recorrencia
 from routers.auth import require_personal, get_usuario_atual
+from utils import agora_brasil, hoje_brasil
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -70,9 +71,9 @@ def _aulas_do_dia(dia: date, db: Session) -> list[dict]:
 
 @router.get("/personal")
 def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal)):
-    hoje = date.today()
+    hoje = hoje_brasil()
     mes_ref = hoje.strftime("%Y-%m")
-    agora = datetime.utcnow()
+    agora = agora_brasil()
     mes_inicio = datetime(hoje.year, hoje.month, 1)
     mes_fim = datetime(hoje.year, hoje.month, monthrange(hoje.year, hoje.month)[1], 23, 59, 59)
 
@@ -177,8 +178,8 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
             "situacao": "em_dia",
         }
 
-    mes_ref = date.today().strftime("%Y-%m")
-    agora = datetime.utcnow()
+    mes_ref = hoje_brasil().strftime("%Y-%m")
+    agora = agora_brasil()
 
     proxima_row = (
         db.query(SlotDisponivel)

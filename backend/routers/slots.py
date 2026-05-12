@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from database import get_db, SlotDisponivel, Recorrencia, FrequenciaRecorrencia, StatusAgendamento, Aluno, OcorrenciaCancelada
+from utils import agora_brasil
 from routers.auth import require_personal, get_usuario_atual
 from routers.bloqueios import horario_bloqueado
 
@@ -21,7 +22,7 @@ class BloquearSlot(BaseModel):
 
 @router.get("/")
 def listar_slots(db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
-    agora = datetime.utcnow()
+    agora = agora_brasil()
     SEMANAS_FRENTE = 26
 
     # Identifica o aluno_id do usuário atual (se for aluno) para marcar suas próprias recorrências
