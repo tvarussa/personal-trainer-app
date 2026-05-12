@@ -13,7 +13,6 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setErro('')
     setCarregando(true)
 
     try {
