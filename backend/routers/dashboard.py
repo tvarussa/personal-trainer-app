@@ -269,7 +269,7 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
         .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
         .filter(
             Agendamento.aluno_id == aluno.id,
-            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado]),
+            Agendamento.status.in_([StatusAgendamento.confirmado, StatusAgendamento.realizado, StatusAgendamento.cancelado]),
             SlotDisponivel.data_hora >= window_inicio,
             SlotDisponivel.data_hora <= window_fim_dt,
         )
@@ -314,10 +314,15 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
     for ag, slot in ags:
         dia_str = slot.data_hora.strftime("%Y-%m-%d")
         hora_str = slot.data_hora.strftime("%H:%M")
-        horarios_reais_por_dia.setdefault(dia_str, set()).add(hora_str)
+        is_cancelado = ag.status == StatusAgendamento.cancelado
+        if not is_cancelado:
+            horarios_reais_por_dia.setdefault(dia_str, set()).add(hora_str)
         ags_por_dia.setdefault(dia_str, []).append({
             "data_hora": slot.data_hora,
             "recorrente": False,
+            "cobrar": not getattr(ag, "nao_cobrar", False) and not is_cancelado,
+            "realizado": ag.status == StatusAgendamento.realizado,
+            "cancelado": is_cancelado,
         })
 
     def aulas_do_dia(dia: date) -> list[dict]:
@@ -327,14 +332,16 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
         for r in recorrencias:
             if r.dia_semana != dia.weekday():
                 continue
-            if (r.id, dia_str) in canceladas:
-                continue
+            is_cancelado = (r.id, dia_str) in canceladas
             if r.horario in hrs:
                 continue
             hora, minuto = map(int, r.horario.split(":"))
             aulas.append({
                 "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
                 "recorrente": True,
+                "cobrar": not is_cancelado and (r.id, dia_str) not in gratuitas,
+                "realizado": False,
+                "cancelado": is_cancelado,
             })
         return sorted(aulas, key=lambda x: x["data_hora"])
 
@@ -349,9 +356,9 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
     for d in proxima_semana_dias:
         lista_proxima_semana.extend(aulas_do_dia(d))
 
-    aulas_semana = len(lista_semana)
+    aulas_semana = sum(1 for a in lista_semana if not a["cancelado"])
     aulas_mes = sum(
-        len(aulas_do_dia(date(hoje.year, hoje.month, d)))
+        sum(1 for a in aulas_do_dia(date(hoje.year, hoje.month, d)) if not a["cancelado"])
         for d in range(1, dias_no_mes + 1)
     )
 
@@ -359,7 +366,9 @@ def dashboard_aluno(db: Session = Depends(get_db), usuario=Depends(get_usuario_a
     aulas_cobradas = 0
     for ag, slot in ags:
         dia_str = slot.data_hora.strftime("%Y-%m-%d")
-        if mes_str_inicio <= dia_str <= mes_str_fim and not getattr(ag, "nao_cobrar", False):
+        if (mes_str_inicio <= dia_str <= mes_str_fim
+                and not getattr(ag, "nao_cobrar", False)
+                and ag.status != StatusAgendamento.cancelado):
             aulas_cobradas += 1
     for r in recorrencias:
         for d in range(1, dias_no_mes + 1):

@@ -22,12 +22,24 @@ function ListaAulas({ aulas, vazia }) {
   return (
     <div className="flex flex-col gap-2">
       {aulas.map((a, i) => (
-        <div key={i} className="flex items-center gap-2">
+        <div key={i} className={`flex items-center gap-2 ${a.cancelado ? 'opacity-50' : ''}`}>
           <span className="text-sm text-gray-500 w-28 shrink-0">{fmtDia(a.data_hora)}</span>
-          <span className="text-sm font-semibold text-gray-800">{fmtHora(a.data_hora)}</span>
-          {a.recorrente && (
-            <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full shrink-0">Rec</span>
-          )}
+          <span className={`text-sm font-semibold ${a.cancelado ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{fmtHora(a.data_hora)}</span>
+          <div className="flex gap-1 flex-wrap">
+            {a.recorrente && (
+              <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1.5 py-0.5 rounded-full">Rec</span>
+            )}
+            {a.cancelado ? (
+              <span className="text-xs bg-gray-100 text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded-full">Cancelada</span>
+            ) : a.realizado ? (
+              <span className="text-xs bg-green-50 text-green-600 border border-green-100 px-1.5 py-0.5 rounded-full">Realizada</span>
+            ) : null}
+            {!a.cancelado && (
+              a.cobrar
+                ? <span className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-1.5 py-0.5 rounded-full">Cobrada</span>
+                : <span className="text-xs bg-orange-50 text-orange-500 border border-orange-100 px-1.5 py-0.5 rounded-full">Não cobrada</span>
+            )}
+          </div>
         </div>
       ))}
     </div>
