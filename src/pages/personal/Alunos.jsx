@@ -3,6 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
 const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+function mesAtualStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+function fmtMes(s) {
+  const [a, m] = s.split('-')
+  return `${MESES_ABREV[parseInt(m) - 1]} ${a}`
+}
+function moeda(v) { return `R$ ${Number(v).toFixed(2).replace('.', ',')}` }
+function round2(n) { return Math.round(n * 100) / 100 }
 
 function Modal({ titulo, onFechar, children }) {
   return (
@@ -153,6 +165,159 @@ function FormAluno({ inicial, academias, onSalvar, onFechar }) {
   )
 }
 
+function AbaFinanceiroAluno({ alunoId }) {
+  const [mes, setMes] = useState(mesAtualStr)
+  const [detalhe, setDetalhe] = useState(null)
+  const [carregando, setCarregando] = useState(false)
+  const [toggling, setToggling] = useState(null)
+
+  function navMes(delta) {
+    const [a, m] = mes.split('-').map(Number)
+    let nm = m + delta, na = a
+    if (nm < 1) { nm = 12; na-- }
+    if (nm > 12) { nm = 1; na++ }
+    setMes(`${na}-${String(nm).padStart(2, '0')}`)
+  }
+
+  const carregar = useCallback(async () => {
+    setCarregando(true)
+    try {
+      const { data } = await api.get(`/financeiro/detalhe-aluno?aluno_id=${alunoId}&mes=${mes}`)
+      setDetalhe(data)
+    } finally {
+      setCarregando(false)
+    }
+  }, [alunoId, mes])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  async function togglePagoAula(aula) {
+    const key = aula.agendamento_id ?? `rec-${aula.recorrencia_id}-${aula.data_hora}`
+    setToggling(key)
+    try {
+      await api.patch('/financeiro/marcar-aula-pago', {
+        agendamento_id: aula.agendamento_id ?? null,
+        recorrencia_id: aula.recorrencia_id ?? null,
+        data: aula.agendamento_id ? null : aula.data_hora.slice(0, 10),
+        pago: !aula.pago,
+      })
+      await carregar()
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  async function toggleTaxaPago() {
+    setToggling('taxa')
+    try {
+      await api.patch('/financeiro/marcar-taxa-pago', {
+        aluno_id: alunoId,
+        mes_referencia: mes,
+        pago: !detalhe.taxa_paga,
+      })
+      await carregar()
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  const hoje = new Date()
+  const executadoPago = detalhe ? round2(
+    detalhe.aulas.filter(a => a.cobrar && a.pago && new Date(a.data_hora) <= hoje).length * detalhe.preco_por_aula +
+    (detalhe.taxa_mensal > 0 && detalhe.taxa_paga ? detalhe.taxa_mensal : 0)
+  ) : 0
+  const executadoPendente = detalhe ? round2(
+    detalhe.aulas.filter(a => a.cobrar && !a.pago && new Date(a.data_hora) <= hoje).length * detalhe.preco_por_aula +
+    (detalhe.taxa_mensal > 0 && !detalhe.taxa_paga ? detalhe.taxa_mensal : 0)
+  ) : 0
+  const aVencer = detalhe ? round2(
+    detalhe.aulas.filter(a => a.cobrar && new Date(a.data_hora) > hoje).length * detalhe.preco_por_aula
+  ) : 0
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3 justify-center">
+        <button onClick={() => navMes(-1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">‹</button>
+        <span className="font-semibold text-gray-800 text-sm">{fmtMes(mes)}</span>
+        <button onClick={() => navMes(1)} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">›</button>
+      </div>
+
+      {detalhe && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-green-50 rounded-xl p-2.5 text-center">
+            <p className="text-xs text-green-600 font-medium leading-tight">Executado pago</p>
+            <p className="text-sm font-bold text-green-800 mt-0.5">{moeda(executadoPago)}</p>
+          </div>
+          <div className="bg-orange-50 rounded-xl p-2.5 text-center">
+            <p className="text-xs text-orange-500 font-medium leading-tight">Executado pendente</p>
+            <p className="text-sm font-bold text-orange-800 mt-0.5">{moeda(executadoPendente)}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-2.5 text-center">
+            <p className="text-xs text-blue-500 font-medium leading-tight">A vencer</p>
+            <p className="text-sm font-bold text-blue-800 mt-0.5">{moeda(aVencer)}</p>
+          </div>
+        </div>
+      )}
+
+      {carregando ? (
+        <p className="text-center text-gray-400 text-sm py-6">Carregando...</p>
+      ) : !detalhe || detalhe.aulas.length === 0 ? (
+        <p className="text-center text-gray-400 text-sm py-4">Nenhuma aula neste mês</p>
+      ) : (
+        <div className="flex flex-col">
+          {detalhe.aulas.map((a, i) => {
+            const key = a.agendamento_id ?? `rec-${a.recorrencia_id}-${a.data_hora}`
+            const d = new Date(a.data_hora)
+            const passado = d <= hoje
+            return (
+              <div key={i} className={`flex items-center gap-2 py-2 border-b border-gray-50 last:border-0 ${!a.cobrar ? 'opacity-50' : ''}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-xs text-gray-500 capitalize">{d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
+                    <span className="text-sm font-semibold text-gray-800">{d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {a.recorrente && <span className="text-xs bg-purple-50 text-purple-500 border border-purple-100 px-1 py-0.5 rounded-full">Rec</span>}
+                    {!passado && <span className="text-xs bg-blue-50 text-blue-400 border border-blue-100 px-1 py-0.5 rounded-full">Futuro</span>}
+                  </div>
+                  {!a.cobrar && <p className="text-xs text-gray-400 mt-0.5">Não cobrada</p>}
+                </div>
+                {a.cobrar && (
+                  <button
+                    onClick={() => togglePagoAula(a)}
+                    disabled={toggling === key}
+                    className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
+                      a.pago ? 'bg-green-50 border-green-200 text-green-700' : 'bg-orange-50 border-orange-200 text-orange-600'
+                    }`}
+                  >
+                    {toggling === key ? '...' : a.pago ? 'Pago' : 'Pendente'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+
+          {detalhe.taxa_mensal > 0 && (
+            <div className="flex items-center justify-between py-2 mt-1 border-t border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Taxa mensal</p>
+                <p className="text-xs text-gray-400">{moeda(detalhe.taxa_mensal)}</p>
+              </div>
+              <button
+                onClick={toggleTaxaPago}
+                disabled={toggling === 'taxa'}
+                className={`text-xs px-2 py-1 rounded-lg border shrink-0 transition-colors disabled:opacity-40 ${
+                  detalhe.taxa_paga ? 'bg-green-50 border-green-200 text-green-700' : 'bg-orange-50 border-orange-200 text-orange-600'
+                }`}
+              >
+                {toggling === 'taxa' ? '...' : detalhe.taxa_paga ? 'Paga' : 'Pendente'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PainelAluno({ aluno, academias, onFechar }) {
   const [aba, setAba] = useState('dados')
   const [recorrencias, setRecorrencias] = useState([])
@@ -191,13 +356,13 @@ function PainelAluno({ aluno, academias, onFechar }) {
   return (
     <Modal titulo={aluno.nome} onFechar={() => onFechar(false)}>
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1">
-        {['dados', 'recorrências'].map((a) => (
+        {[['dados', 'Dados'], ['recorrências', 'Horários'], ['financeiro', 'Financeiro']].map(([val, label]) => (
           <button
-            key={a}
-            onClick={() => setAba(a)}
-            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${aba === a ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
+            key={val}
+            onClick={() => setAba(val)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${aba === val ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
           >
-            {a}
+            {label}
           </button>
         ))}
       </div>
@@ -210,6 +375,8 @@ function PainelAluno({ aluno, academias, onFechar }) {
           onFechar={() => onFechar(false)}
         />
       )}
+
+      {aba === 'financeiro' && <AbaFinanceiroAluno alunoId={aluno.id} />}
 
       {aba === 'recorrências' && (
         <div className="flex flex-col gap-4">

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, date
 from calendar import monthrange
-from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, SlotDisponivel, Usuario, StatusAgendamento, OcorrenciaCancelada, OcorrenciaGratuita
+from database import get_db, Financeiro, Aluno, Agendamento, Recorrencia, SlotDisponivel, Usuario, StatusAgendamento, OcorrenciaCancelada, OcorrenciaGratuita, OcorrenciaPaga
 from routers.auth import require_personal, get_usuario_atual
 from utils import agora_brasil
 
@@ -393,6 +393,7 @@ def detalhe_aluno(aluno_id: int, mes: str, db: Session = Depends(get_db), _=Depe
         aulas.append({
             "data_hora": slot.data_hora,
             "cobrar": not getattr(ag, "nao_cobrar", False),
+            "pago": getattr(ag, "pago", False),
             "agendamento_id": ag.id,
             "recorrencia_id": None,
             "recorrente": False,
@@ -418,6 +419,16 @@ def detalhe_aluno(aluno_id: int, mes: str, db: Session = Depends(get_db), _=Depe
             OcorrenciaGratuita.data <= mes_str_fim,
         ).all()
     }
+    pagas_rec = {
+        (op.recorrencia_id, op.data)
+        for op in db.query(OcorrenciaPaga)
+        .join(Recorrencia, OcorrenciaPaga.recorrencia_id == Recorrencia.id)
+        .filter(
+            Recorrencia.aluno_id == aluno_id,
+            OcorrenciaPaga.data >= mes_str_inicio,
+            OcorrenciaPaga.data <= mes_str_fim,
+        ).all()
+    }
 
     dias_no_mes = monthrange(inicio.year, inicio.month)[1]
     for r in db.query(Recorrencia).filter(Recorrencia.aluno_id == aluno_id, Recorrencia.ativo == True).all():  # noqa: E712
@@ -435,9 +446,11 @@ def detalhe_aluno(aluno_id: int, mes: str, db: Session = Depends(get_db), _=Depe
             aulas.append({
                 "data_hora": datetime(dia.year, dia.month, dia.day, hora, minuto),
                 "cobrar": (r.id, dia_str) not in gratuitas,
+                "pago": (r.id, dia_str) in pagas_rec,
                 "agendamento_id": None,
                 "recorrencia_id": r.id,
                 "recorrente": True,
+                "data": dia_str,
             })
 
     aulas.sort(key=lambda x: x["data_hora"])
@@ -452,8 +465,71 @@ def detalhe_aluno(aluno_id: int, mes: str, db: Session = Depends(get_db), _=Depe
         "nome_aluno": aluno.usuario.nome if aluno.usuario else "—",
         "mes_referencia": mes,
         "taxa_mensal": aluno.taxa_mensal,
+        "taxa_paga": fin.taxa_paga if fin else False,
         "preco_por_aula": aluno.preco_por_aula,
         "aulas": aulas,
         "financeiro_id": fin.id if fin else None,
         "pago": fin.pago if fin else False,
     }
+
+
+class MarcarAulaPago(BaseModel):
+    agendamento_id: int | None = None
+    recorrencia_id: int | None = None
+    data: str | None = None  # "YYYY-MM-DD" — obrigatório quando recorrencia_id
+    pago: bool
+
+
+@router.patch("/marcar-aula-pago")
+def marcar_aula_pago(dados: MarcarAulaPago, db: Session = Depends(get_db), _=Depends(require_personal)):
+    if dados.agendamento_id:
+        ag = db.query(Agendamento).filter(Agendamento.id == dados.agendamento_id).first()
+        if not ag:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+        ag.pago = dados.pago
+        db.commit()
+        return {"ok": True}
+
+    if dados.recorrencia_id and dados.data:
+        existente = db.query(OcorrenciaPaga).filter(
+            OcorrenciaPaga.recorrencia_id == dados.recorrencia_id,
+            OcorrenciaPaga.data == dados.data,
+        ).first()
+        if dados.pago and not existente:
+            db.add(OcorrenciaPaga(recorrencia_id=dados.recorrencia_id, data=dados.data))
+            db.commit()
+        elif not dados.pago and existente:
+            db.delete(existente)
+            db.commit()
+        return {"ok": True}
+
+    raise HTTPException(status_code=400, detail="Informe agendamento_id ou recorrencia_id + data")
+
+
+class MarcarTaxaPago(BaseModel):
+    aluno_id: int
+    mes_referencia: str
+    pago: bool
+
+
+@router.patch("/marcar-taxa-pago")
+def marcar_taxa_pago(dados: MarcarTaxaPago, db: Session = Depends(get_db), _=Depends(require_personal)):
+    aluno = db.query(Aluno).filter(Aluno.id == dados.aluno_id).first()
+    if not aluno:
+        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+    fin = db.query(Financeiro).filter(
+        Financeiro.aluno_id == dados.aluno_id,
+        Financeiro.mes_referencia == dados.mes_referencia,
+    ).first()
+    if fin:
+        fin.taxa_paga = dados.pago
+    else:
+        fin = Financeiro(
+            aluno_id=dados.aluno_id,
+            mes_referencia=dados.mes_referencia,
+            taxa_mensal=aluno.taxa_mensal,
+            taxa_paga=dados.pago,
+        )
+        db.add(fin)
+    db.commit()
+    return {"ok": True}

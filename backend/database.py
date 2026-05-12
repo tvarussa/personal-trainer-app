@@ -117,6 +117,7 @@ class Agendamento(Base):
     cancelado_com_antecedencia = Column(Boolean, default=False)
     cobrado = Column(Boolean, default=False)
     nao_cobrar = Column(Boolean, default=False)
+    pago = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     aluno = relationship("Aluno", back_populates="agendamentos")
@@ -147,6 +148,7 @@ class Financeiro(Base):
     taxa_mensal = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
     pago = Column(Boolean, default=False)
+    taxa_paga = Column(Boolean, default=False)
 
     aluno = relationship("Aluno", back_populates="financeiros")
 
@@ -205,5 +207,31 @@ class OcorrenciaGratuita(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class OcorrenciaPaga(Base):
+    """Marca uma ocorrência de aula recorrente como paga."""
+    __tablename__ = "ocorrencias_pagas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recorrencia_id = Column(Integer, ForeignKey("recorrencias.id"), nullable=False)
+    data = Column(String, nullable=False)  # "YYYY-MM-DD"
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+
 def criar_tabelas():
     Base.metadata.create_all(bind=engine)
+    _migrar_colunas()
+
+
+def _migrar_colunas():
+    """Adiciona colunas novas em tabelas existentes sem quebrar dados."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS pago BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE financeiro ADD COLUMN IF NOT EXISTS taxa_paga BOOLEAN DEFAULT FALSE",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
