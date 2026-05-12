@@ -115,7 +115,7 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
         if ag.aluno and not getattr(ag, "nao_cobrar", False)
     ), 2)
 
-    # Receita projetada: aulas confirmadas+realizadas no mês + taxa_mensal por aluno com ≥1 aula
+    # Receita projetada: agendamentos reais + recorrências virtuais do mês + taxa_mensal
     agendados_mes = (
         db.query(Agendamento, SlotDisponivel)
         .join(SlotDisponivel, Agendamento.slot_id == SlotDisponivel.id)
@@ -126,12 +126,68 @@ def dashboard_personal(db: Session = Depends(get_db), _=Depends(require_personal
         )
         .all()
     )
+
+    # Agrupa agendamentos reais por aluno e mapeia horários ocupados por dia
+    horarios_reais_por_dia: dict[str, set] = {}
+    aulas_reais_por_aluno: dict[int, int] = {}
+    aluno_por_id: dict[int, Aluno] = {}
+    for ag, slot in agendados_mes:
+        if not ag.aluno or getattr(ag, "nao_cobrar", False):
+            continue
+        dia_str = slot.data_hora.strftime("%Y-%m-%d")
+        hora_str = slot.data_hora.strftime("%H:%M")
+        horarios_reais_por_dia.setdefault(dia_str, set()).add(hora_str)
+        aulas_reais_por_aluno[ag.aluno_id] = aulas_reais_por_aluno.get(ag.aluno_id, 0) + 1
+        aluno_por_id[ag.aluno_id] = ag.aluno
+
+    # Carrega ocorrências canceladas e gratuitas do mês
+    mes_str_inicio = mes_inicio.strftime("%Y-%m-%d")
+    mes_str_fim = mes_fim.strftime("%Y-%m-%d")
+    canceladas_mes = {
+        (oc.recorrencia_id, oc.data)
+        for oc in db.query(OcorrenciaCancelada).filter(
+            OcorrenciaCancelada.data >= mes_str_inicio,
+            OcorrenciaCancelada.data <= mes_str_fim,
+        ).all()
+    }
+    gratuitas_mes = {
+        (og.recorrencia_id, og.data)
+        for og in db.query(OcorrenciaGratuita).filter(
+            OcorrenciaGratuita.data >= mes_str_inicio,
+            OcorrenciaGratuita.data <= mes_str_fim,
+        ).all()
+    }
+
+    # Conta aulas virtuais (recorrências não cobertas por agendamento real)
+    virtual_por_aluno: dict[int, int] = {}
+    for r in db.query(Recorrencia).filter(Recorrencia.ativo == True).all():  # noqa: E712
+        if not r.aluno:
+            continue
+        aluno_por_id[r.aluno_id] = r.aluno
+        for d in range(1, dias_no_mes + 1):
+            dia = date(hoje.year, hoje.month, d)
+            if dia.weekday() != r.dia_semana:
+                continue
+            dia_str = dia.strftime("%Y-%m-%d")
+            if (r.id, dia_str) in canceladas_mes or (r.id, dia_str) in gratuitas_mes:
+                continue
+            if r.horario in horarios_reais_por_dia.get(dia_str, set()):
+                continue
+            virtual_por_aluno[r.aluno_id] = virtual_por_aluno.get(r.aluno_id, 0) + 1
+
+    # Calcula receita projetada
     alunos_proj: dict[int, Aluno] = {}
     receita_aulas_proj = 0.0
-    for ag, _ in agendados_mes:
-        if ag.aluno and not getattr(ag, "nao_cobrar", False):
-            receita_aulas_proj += ag.aluno.preco_por_aula
-            alunos_proj[ag.aluno_id] = ag.aluno
+    for aluno_id, count in aulas_reais_por_aluno.items():
+        aluno = aluno_por_id.get(aluno_id)
+        if aluno:
+            receita_aulas_proj += count * aluno.preco_por_aula
+            alunos_proj[aluno_id] = aluno
+    for aluno_id, count in virtual_por_aluno.items():
+        aluno = aluno_por_id.get(aluno_id)
+        if aluno:
+            receita_aulas_proj += count * aluno.preco_por_aula
+            alunos_proj[aluno_id] = aluno
     receita_projetada = round(
         receita_aulas_proj + sum(a.taxa_mensal for a in alunos_proj.values()), 2
     )
